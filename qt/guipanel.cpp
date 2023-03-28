@@ -114,6 +114,21 @@ void GUIPanel::readRequest()
                         pingResponseReceived();
                         break;
 
+                    case MENSAJE_DATOS_VELOCIDAD:
+                    {
+                        PARAM_MENSAJE_DATOS_VELOCIDAD parametro;
+                        if (check_and_extract_message_param(ptrtoparam, tam, sizeof(parametro),&parametro)>0)
+                        {
+                            // Muestra en una etiqueta (statuslabel) del GUI el mensaje
+                            ui->Compass->setValue(parametro.rAngle);
+                            ui ->Compass->setNeedle(new QwtCompassMagnetNeedle(QwtCompassMagnetNeedle::ThinStyle));
+                            ui ->Compass->setMode(QwtDial::RotateNeedle);
+                            ui->qdigitalgauge->setValue(parametro.rVel);
+                            ui->counter->setValue(parametro.travelDistance);
+                        }
+                    }
+                        break;
+
                     case MENSAJE_NO_IMPLEMENTADO:
                     {
                         // En otros mensajes hay que extraer los parametros de la trama y copiarlos

@@ -48,6 +48,7 @@
 
 #define DIV_RELOJ_PWM   2
 #define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
+#define POSICIONES_COLA 3
 
 // Definiciones de tareas
 #define PWMTASKPRIO 1           // Prioridad para la tarea PWMTASK
@@ -59,11 +60,10 @@
 uint32_t g_ui32CPUUsage;
 uint32_t g_ui32SystemClock;
 
-
 SemaphoreHandle_t semaforo_freertos2;
 TimerHandle_t xTimer;
-QueueHandle_t cola_freertos_mot;
-
+QueueHandle_t cola_freertos_mot,cola_freertos_mot2;
+static QueueSetHandle_t grupo_colas;
 
 //*****************************************************************************
 //
@@ -209,6 +209,7 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
                        vMotor[0] = parametro.valor_motor_1;
                        vMotor[1] = parametro.valor_motor_2;
                        xQueueSend(cola_freertos_mot,vMotor,500);
+                       xQueueSend(cola_freertos_mot2,vMotor,500);
                     }else{//Error
                         ui32Errors++; // Tratamiento del error
                     }
@@ -285,10 +286,42 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
 
 static portTASK_FUNCTION(VelTask,pvParameters)
 {
+    QueueSetMemberHandle_t  Activado;
+    PARAM_MENSAJE_DATOS_VELOCIDAD parametro;
+    parametro.rVel = 0;
+    parametro.rAngle = 0;
+    parametro.travelDistance = 0;
+
+    uint32_t total_distance = 0;
+
+    int32_t i32Numdatos;
+    uint8_t pui8Frame[MAX_FRAME_SIZE];
+    int8_t vMotor[2];
 
     while(1)
     {
-        xSemaphoreTake(semaforo_freertos2,portMAX_DELAY); //Paramos en el semaforo binario del RTOS
+        Activado = xQueueSelectFromSet( grupo_colas, portMAX_DELAY);
+        if (Activado==cola_freertos_mot2)
+        {
+            xQueueReceive(cola_freertos_mot2,vMotor,0);
+            xSemaphoreTake(semaforo_freertos2,0);
+            parametro.rVel = (vMotor[0] + vMotor[1])/2.0;
+            parametro.rAngle = (vMotor[0] - vMotor[1])/10.0;
+            total_distance += (0.2*abs(parametro.rVel));
+            parametro.travelDistance = total_distance;
+        }else if(Activado==semaforo_freertos2){
+            xSemaphoreTake(semaforo_freertos2,0); //cierra el semaforo para que pueda volver a darse
+            total_distance += (0.2*abs(parametro.rVel));
+            parametro.travelDistance = total_distance;
+        }
+
+        i32Numdatos=create_frame(pui8Frame,MENSAJE_DATOS_VELOCIDAD,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
+        if (i32Numdatos>=0)
+        {
+            send_frame(pui8Frame,i32Numdatos);
+        }else{
+            while(1);
+        }
     }
 }
 
@@ -368,8 +401,15 @@ int main(void)
     }
 
     //Creamos la cola
-    cola_freertos_mot=xQueueCreate(16,sizeof(uint32_t));
+    cola_freertos_mot=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
     if (NULL==cola_freertos_mot)
+    while(1); // Si hay problemas para crear la cola, se queda aquí.
+
+    //********* Cosas para la especificacion 2 *******//
+
+    //Creamos la cola
+    cola_freertos_mot2=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
+    if (NULL==cola_freertos_mot2)
     while(1); // Si hay problemas para crear la cola, se queda aquí.
 
     semaforo_freertos2=xSemaphoreCreateBinary();
@@ -377,6 +417,20 @@ int main(void)
     {
         while (1);  //No hay memoria para los semaforo
     }
+
+    grupo_colas = xQueueCreateSet( POSICIONES_COLA + 1);    // El de la cola, mas uno por cada semaforo binario
+    if (NULL == grupo_colas)
+        while(1);
+
+    if (xQueueAddToSet(cola_freertos_mot2, grupo_colas)!=pdPASS)
+    {
+        while(1);
+    }
+    if (xQueueAddToSet(semaforo_freertos2, grupo_colas)!=pdPASS)
+    {
+        while(1);
+    }
+
     //
     // Arranca el  scheduler.  Pasamos a ejecutar las tareas que se hayan activado.
     //
