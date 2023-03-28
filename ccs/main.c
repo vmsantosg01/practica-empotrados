@@ -36,6 +36,7 @@
 #include "task.h"                // FreeRTOS: definiciones relacionadas con tareas
 #include "semphr.h"              // FreeRTOS: definiciones relacionadas con semaforos
 #include "queue.h"               // FreeRTOS: definiciones relacionadas con colas de mensajes
+#include "timers.h"              // FreeRTOS: definiciones relacionadas con timers
 #include "utils/cpu_usage.h"
 #include "commands.h"
 #include <serial2USBprotocol.h>
@@ -46,19 +47,23 @@
 //DEFINICION MACROS
 
 #define DIV_RELOJ_PWM   2
-#define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM
+#define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
 
 // Definiciones de tareas
 #define PWMTASKPRIO 1           // Prioridad para la tarea PWMTASK
 #define PWMTASKSTACKSIZE 128    // Tamaño de pila para la tarea PWMTASK
+#define VELTASKPRIO 1           // Prioridad para la tarea PWMTASK
+#define VELTASKSTACKSIZE 128    // Tamaño de pila para la tarea PWMTASK
 
 // Variables globales "main"
 uint32_t g_ui32CPUUsage;
 uint32_t g_ui32SystemClock;
-int8_t vMotor[2] = {0,0};
-uint32_t periodPWM;
 
-SemaphoreHandle_t semaforo_freertos1;
+
+SemaphoreHandle_t semaforo_freertos2;
+TimerHandle_t xTimer;
+QueueHandle_t cola_freertos_mot;
+
 
 //*****************************************************************************
 //
@@ -88,9 +93,7 @@ void vApplicationStackOverflowHook(TaskHandle_t pxTask, char *pcTaskName)
     // on entry to this function, so no processor interrupts will interrupt
     // this loop.
     //
-    while(1)
-    {
-    }
+    while(1);
 }
 
 //Esto se ejecuta cada Tick del sistema. LLeva la estadistica de uso de la CPU (tiempo que la CPU ha estado funcionando)
@@ -200,12 +203,12 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
                 case MENSAJE_SLITHERS:
                 {
                     PARAM_MENSAJE_SLITHERS parametro;
-                    BaseType_t higherPriorityTaskWoken=pdFALSE;
+                    int8_t vMotor[2];
                     if (check_and_extract_message_param(ptrtoreceivedparam, i32Numdatos, sizeof(parametro),&parametro)>0)
                     {
                        vMotor[0] = parametro.valor_motor_1;
                        vMotor[1] = parametro.valor_motor_2;
-                       xSemaphoreGiveFromISR(semaforo_freertos1,&higherPriorityTaskWoken);
+                       xQueueSend(cola_freertos_mot,vMotor,500);
                     }else{//Error
                         ui32Errors++; // Tratamiento del error
                     }
@@ -240,7 +243,8 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
 {
     //Initial configuration
     uint32_t ui32DutyCycle1,ui32DutyCycle2;
-    periodPWM=PERIOD_PWM; // Configuramos la frecuencia de 50Hz
+    uint32_t periodPWM = PERIOD_PWM; // Configuramos la frecuencia de 50Hz
+    int8_t vMotor[2];
 
     PWMGenConfigure(PWM1_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC); // Configuramos el generador PWM
     PWMGenPeriodSet(PWM1_BASE, PWM_GEN_3, periodPWM); // Establece periodo
@@ -251,24 +255,46 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
     //
     while(1)
     {
-        xSemaphoreTake(semaforo_freertos1,portMAX_DELAY); //Paramos en el semaforo binario del RTOS
-        ui32DutyCycle1 = (abs(vMotor[0])/100.0) * PERIOD_PWM;   //Calculamos los ciclos de trabajo
-        ui32DutyCycle2 = (abs(vMotor[1])/100.0) * PERIOD_PWM;
+        if (xQueueReceive(cola_freertos_mot,vMotor,portMAX_DELAY)==pdTRUE){ // Cambiar portMAX_DELAY por 500 para apagado automatico 5 seg despues
 
-        if(ui32DutyCycle1!=0){
-            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6,ui32DutyCycle1 ); // Establece ciclo de trabajo 1
-            PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, true); // Habilita salidas PWMbit6
-        }else{
-            PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, false); // deshabilita salida PWMbit6
+            ui32DutyCycle1 = (abs(vMotor[0])/100.0) * PERIOD_PWM;   //Calculamos los ciclos de trabajo
+            ui32DutyCycle2 = (abs(vMotor[1])/100.0) * PERIOD_PWM;
+
+            if(ui32DutyCycle1!=0){
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6,ui32DutyCycle1 ); // Establece ciclo de trabajo 1
+                PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, true); // Habilita salidas PWMbit6
+            }else{
+                PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, false); // deshabilita salida PWMbit6
+            }
+
+            if(ui32DutyCycle2!=0){
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7,ui32DutyCycle2); // Establece ciclo de trabajo 2
+                PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, true); // Habilita salidas PWMbit7
+            }else{
+                PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, false); // deshabilita salida PWMbit7
+            }
+
+        }else{  //Por esta rama nunca llega excepto que la espera no sea portMAX_DELAY
+            while(1);
         }
 
-        if(ui32DutyCycle2!=0){
-            PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7,ui32DutyCycle2); // Establece ciclo de trabajo 2
-            PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, true); // Habilita salidas PWMbit7
-        }else{
-            PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, false); // deshabilita salida PWMbit7
-        }
     }
+}
+
+//*************************** TAREA VELOCIDAD ************************************//
+
+static portTASK_FUNCTION(VelTask,pvParameters)
+{
+
+    while(1)
+    {
+        xSemaphoreTake(semaforo_freertos2,portMAX_DELAY); //Paramos en el semaforo binario del RTOS
+    }
+}
+
+void vTimerCallback( TimerHandle_t pxTimer )
+{
+    xSemaphoreGive(semaforo_freertos2);
 }
 
 //**********************************************************************************************************************************************************
@@ -289,7 +315,7 @@ int main(void)
     // (y por tanto este no se deberia utilizar para otra cosa).
     CPUUsageInit(g_ui32SystemClock, configTICK_RATE_HZ/10, 3);
 
-    //___________________________CONFIGURACIONES INICIALES PWM___________________________________
+    //___________________________CONFIGURACIONES INICIALES PWM___________________________________//
 
     SysCtlPWMClockSet(SYSCTL_PWMDIV_2);  // NHR: Configure PWM Clock divide system clock by 2
 
@@ -301,8 +327,6 @@ int main(void)
     GPIOPinTypePWM(GPIO_PORTF_BASE, GPIO_PIN_3 | GPIO_PIN_2); // NHR: PF2 y PF3 van a tener funcn PWM
 
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_PWM1);
-
-    //____________________________________________________________________________________________
 
     /**********************CREACION TAREAS******************************/
 
@@ -326,13 +350,33 @@ int main(void)
         while(1);
     }
 
-    //Crea los semaforos compartidos por tareas e ISR
-    semaforo_freertos1=xSemaphoreCreateBinary();
-    if ((semaforo_freertos1==NULL))
+    if((xTaskCreate(VelTask, "VelCalc", VELTASKSTACKSIZE, NULL ,tskIDLE_PRIORITY + VELTASKPRIO, NULL) != pdPASS))
+    {
+        while(1);
+    }
+
+    xTimer = xTimerCreate("TimerSW", 0.2 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
+    if( NULL == xTimer )
+             {
+                while(1);
+             }
+    else{
+        if( xTimerStart( xTimer, 0 ) != pdPASS ) //Inicializacion timerSW
+        {
+            while(1);
+        }
+    }
+
+    //Creamos la cola
+    cola_freertos_mot=xQueueCreate(16,sizeof(uint32_t));
+    if (NULL==cola_freertos_mot)
+    while(1); // Si hay problemas para crear la cola, se queda aquí.
+
+    semaforo_freertos2=xSemaphoreCreateBinary();
+    if ((semaforo_freertos2==NULL))
     {
         while (1);  //No hay memoria para los semaforo
     }
-
     //
     // Arranca el  scheduler.  Pasamos a ejecutar las tareas que se hayan activado.
     //
@@ -341,4 +385,3 @@ int main(void)
     //De la funcion vTaskStartScheduler no se sale nunca... a partir de aqui pasan a ejecutarse las tareas.
     while(1);
 }
-
