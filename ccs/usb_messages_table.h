@@ -37,7 +37,7 @@ typedef struct {
 typedef struct {
     uint32_t travelDistance;
     float rVel;
-    float rAngle;
+    int32_t rAngle;
 }PACKED PARAM_MENSAJE_DATOS_VELOCIDAD;
 
 //#pragma pack()    //...Pero solo para los mensajes que voy a intercambiar, no para el resto

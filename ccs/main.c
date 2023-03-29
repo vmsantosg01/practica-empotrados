@@ -49,6 +49,7 @@
 #define DIV_RELOJ_PWM   2
 #define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
 #define POSICIONES_COLA 3
+#define TIEMPOT1 0.2
 
 // Definiciones de tareas
 #define PWMTASKPRIO 1           // Prioridad para la tarea PWMTASK
@@ -305,15 +306,19 @@ static portTASK_FUNCTION(VelTask,pvParameters)
         {
             xQueueReceive(cola_freertos_mot2,vMotor,0);
             xSemaphoreTake(semaforo_freertos2,0);
-            parametro.rVel = (vMotor[0] + vMotor[1])/2.0;
-            parametro.rAngle = (vMotor[0] - vMotor[1])/10.0;
-            total_distance += (0.2*abs(parametro.rVel));
-            parametro.travelDistance = total_distance;
+            parametro.rVel = (vMotor[0] + vMotor[1])/20.0;
         }else if(Activado==semaforo_freertos2){
             xSemaphoreTake(semaforo_freertos2,0); //cierra el semaforo para que pueda volver a darse
-            total_distance += (0.2*abs(parametro.rVel));
-            parametro.travelDistance = total_distance;
         }
+
+        parametro.rAngle += (int32_t)(TIEMPOT1 * (vMotor[0] - vMotor[1])/10) * (180/3.14); //Formula angulo (vizq - Vder/ dist)*tiempo*180/pi
+        if(parametro.rAngle < 0){
+            parametro.rAngle += 360.0;
+        }else if(parametro.rAngle > 360){
+            parametro.rAngle -= 360.0;
+        }
+        total_distance += (TIEMPOT1*abs(parametro.rVel));
+        parametro.travelDistance = total_distance;
 
         i32Numdatos=create_frame(pui8Frame,MENSAJE_DATOS_VELOCIDAD,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
         if (i32Numdatos>=0)
@@ -388,7 +393,7 @@ int main(void)
         while(1);
     }
 
-    xTimer = xTimerCreate("TimerSW", 0.2 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
+    xTimer = xTimerCreate("TimerSW", TIEMPOT1 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
     if( NULL == xTimer )
              {
                 while(1);
