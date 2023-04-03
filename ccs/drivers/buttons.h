@@ -55,6 +55,7 @@ extern "C"
 #define NUM_BUTTONS             2
 #define LEFT_BUTTON             GPIO_PIN_4
 #define RIGHT_BUTTON            GPIO_PIN_0
+#define MID_BUTTON              GPIO_PIN_1
 
 #define ALL_BUTTONS             (LEFT_BUTTON | RIGHT_BUTTON)
 

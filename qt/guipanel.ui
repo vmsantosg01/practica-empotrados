@@ -256,6 +256,70 @@
       <string>0</string>
      </property>
     </widget>
+    <widget class="Led" name="ledIzq">
+     <property name="geometry">
+      <rect>
+       <x>140</x>
+       <y>210</y>
+       <width>16</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="toolTip">
+      <string>Color Led component</string>
+     </property>
+     <property name="whatsThis">
+      <string>Led indicator</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+    </widget>
+    <widget class="Led" name="ledDer">
+     <property name="geometry">
+      <rect>
+       <x>200</x>
+       <y>210</y>
+       <width>16</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="toolTip">
+      <string>Color Led component</string>
+     </property>
+     <property name="whatsThis">
+      <string>Led indicator</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+    </widget>
+    <widget class="Led" name="ledMid">
+     <property name="geometry">
+      <rect>
+       <x>170</x>
+       <y>260</y>
+       <width>16</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="toolTip">
+      <string>Color Led component</string>
+     </property>
+     <property name="whatsThis">
+      <string>Led indicator</string>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+     <property name="color">
+      <color>
+       <red>0</red>
+       <green>0</green>
+       <blue>255</blue>
+      </color>
+     </property>
+    </widget>
    </widget>
    <widget class="QWidget" name="tab_2">
     <attribute name="title">
@@ -324,6 +388,11 @@
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
+  <customwidget>
+   <class>Led</class>
+   <extends>QWidget</extends>
+   <header>analogwidgets/led.h</header>
+  </customwidget>
   <customwidget>
    <class>Counter</class>
    <extends>QWidget</extends>

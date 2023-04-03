@@ -15,6 +15,7 @@ typedef enum {
     MENSAJE_PING,
     MENSAJE_SLITHERS,
     MENSAJE_DATOS_VELOCIDAD,
+    MENSAJE_BUTTONS,
     //etc, etc...
 } messageTypes;
 
@@ -39,6 +40,15 @@ typedef struct {
     float rVel;
     int32_t rAngle;
 }PACKED PARAM_MENSAJE_DATOS_VELOCIDAD;
+
+typedef union {
+    struct {
+        uint8_t fLeft:1;
+        uint8_t fRight:1;
+        uint8_t fMid:1;
+    } PACKED button;
+    uint8_t  ui8Buttons;
+} PACKED PARAM_MENSAJE_BUTTONS;
 
 //#pragma pack()    //...Pero solo para los mensajes que voy a intercambiar, no para el resto
 

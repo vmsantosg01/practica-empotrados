@@ -43,7 +43,6 @@
 #include <usb_dev_serial.h>
 #include "usb_messages_table.h"
 
-
 //DEFINICION MACROS
 
 #define DIV_RELOJ_PWM   2
@@ -61,9 +60,9 @@
 uint32_t g_ui32CPUUsage;
 uint32_t g_ui32SystemClock;
 
-SemaphoreHandle_t semaforo_freertos2;
+SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex;
 TimerHandle_t xTimer;
-QueueHandle_t cola_freertos_mot,cola_freertos_mot2;
+QueueHandle_t cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot; //
 static QueueSetHandle_t grupo_colas;
 
 //*****************************************************************************
@@ -177,7 +176,9 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
                     i32Numdatos=create_frame(pui8Frame,ui8Message,0,0,MAX_FRAME_SIZE);
                     if (i32Numdatos>=0)
                     {
+                        xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
                         send_frame(pui8Frame,i32Numdatos);
+                        xSemaphoreGive(USBSemaphoreMutex);
                     }else{
                         //Error de creacion de trama: determinar el error y abortar operacion
                         ui32Errors++;
@@ -225,7 +226,9 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
                     i32Numdatos=create_frame(pui8Frame,MENSAJE_NO_IMPLEMENTADO,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
                     if (i32Numdatos>=0)
                     {
+                        xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
                         send_frame(pui8Frame,i32Numdatos);
+                        xSemaphoreGive(USBSemaphoreMutex);
                     }
                     break;
                 }
@@ -311,7 +314,7 @@ static portTASK_FUNCTION(VelTask,pvParameters)
             xSemaphoreTake(semaforo_freertos2,0); //cierra el semaforo para que pueda volver a darse
         }
 
-        parametro.rAngle += (int32_t)(TIEMPOT1 * (vMotor[0] - vMotor[1])/10) * (180/3.14); //Formula angulo (vizq - Vder/ dist)*tiempo*180/pi
+        parametro.rAngle += (int32_t)(TIEMPOT1 * (vMotor[0] - vMotor[1])/10.0) * (180.0/3.14); //Formula angulo (vizq - Vder/ dist)*tiempo*180/pi
         if(parametro.rAngle < 0){
             parametro.rAngle += 360.0;
         }else if(parametro.rAngle > 360){
@@ -323,12 +326,48 @@ static portTASK_FUNCTION(VelTask,pvParameters)
         i32Numdatos=create_frame(pui8Frame,MENSAJE_DATOS_VELOCIDAD,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
         if (i32Numdatos>=0)
         {
+            xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
             send_frame(pui8Frame,i32Numdatos);
+            xSemaphoreGive(USBSemaphoreMutex);
         }else{
             while(1);
         }
     }
 }
+
+//*************************** TAREA BOTONES ************************************//
+static portTASK_FUNCTION( ButtonsTask, pvParameters )
+{
+    uint8_t pui8Frame[MAX_FRAME_SIZE];  //Ojo, esto hace que esta tarea necesite bastante pila
+    PARAM_MENSAJE_BUTTONS parametro;
+    int32_t i32Numdatos;
+    int32_t i32Status;
+    //
+    // Loop forever.
+    //
+    while(1)
+    {
+        if (xQueueReceive(cola_freertos_bot,&i32Status,portMAX_DELAY)==pdTRUE)
+        {
+            parametro.ui8Buttons=0;
+            if((i32Status & LEFT_BUTTON) == 0)
+                parametro.button.fLeft = 1;
+            if((i32Status & RIGHT_BUTTON) == 0)
+                parametro.button.fRight = 1;
+            if((i32Status & MID_BUTTON) == 0)
+                parametro.button.fMid = 1;
+            i32Numdatos=create_frame(pui8Frame,MENSAJE_BUTTONS,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
+            if (i32Numdatos>=0)
+            {
+                xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
+                send_frame(pui8Frame,i32Numdatos);
+                xSemaphoreGive(USBSemaphoreMutex);
+            }
+        }
+    }
+}
+
+//*************************** TAREA TIMER DATOS ************************************//
 
 void vTimerCallback( TimerHandle_t pxTimer )
 {
@@ -366,6 +405,24 @@ int main(void)
 
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_PWM1);
 
+    //___________________________CONFIGURACIONES INICIALES BOTONES___________________________________//
+    ButtonsInit();
+    //ESTAS SON PARA EL BOTON EXTRA (PinD1)
+//    ROM_GPIODirModeSet(GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_DIR_MODE_IN); //
+//    MAP_GPIOPadConfigSet(GPIO_PORTD_BASE, GPIO_PIN_1,
+//                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+    MAP_GPIOIntTypeSet(GPIO_PORTF_BASE, ALL_BUTTONS,GPIO_BOTH_EDGES);
+//    MAP_GPIOIntTypeSet(GPIO_PORTD_BASE, GPIO_PIN_1,GPIO_BOTH_EDGES);
+
+    MAP_IntPrioritySet(INT_GPIOF,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
+//    MAP_IntPrioritySet(INT_GPIOD,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
+    // Una prioridad menor (mayor numero) podria dar problemas si la interrupcion
+    // ejecuta llamadas a funciones de FreeRTOS
+    MAP_GPIOIntEnable(GPIO_PORTF_BASE,ALL_BUTTONS);
+    MAP_IntEnable(INT_GPIOF);
+//    MAP_GPIOIntEnable(GPIO_PORTD_BASE,GPIO_PIN_1);
+//    MAP_IntEnable(INT_GPIOD);
+
     /**********************CREACION TAREAS******************************/
 
     // Inicializa el sistema de depuracion por terminal UART
@@ -392,6 +449,15 @@ int main(void)
     {
         while(1);
     }
+
+    if(xTaskCreate(ButtonsTask, "Botones",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
+    {
+        while(1);
+    }
+
+    cola_freertos_bot=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
+    if (NULL==cola_freertos_bot)
+        while(1);
 
     xTimer = xTimerCreate("TimerSW", TIEMPOT1 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
     if( NULL == xTimer )
@@ -436,6 +502,11 @@ int main(void)
         while(1);
     }
 
+    USBSemaphoreMutex = xSemaphoreCreateMutex();
+    if (NULL == USBSemaphoreMutex)
+    {
+        while (1);  //No hay memoria para los semaforo
+    }
     //
     // Arranca el  scheduler.  Pasamos a ejecutar las tareas que se hayan activado.
     //
@@ -444,3 +515,23 @@ int main(void)
     //De la funcion vTaskStartScheduler no se sale nunca... a partir de aqui pasan a ejecutarse las tareas.
     while(1);
 }
+
+void GPIOFIntHandler(void)
+{
+    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
+    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTF_BASE,ALL_BUTTONS);
+    xQueueSendFromISR (cola_freertos_bot,&i32Status,&higherPriorityTaskWoken);
+    MAP_GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS);              //limpiamos flags
+    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
+    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
+} //TIENES QUE CREARLA PARA EL PUERTO D Y EN EL FICHERO DE LAS INTERRUPCIONES TAMBIEN
+
+//void GPIODIntHandler(void)
+//{
+//    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
+//    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTD_BASE,GPIO_PIN_1);
+//    xQueueSendFromISR (cola_freertos_bot,&i32Status,&higherPriorityTaskWoken);
+//    MAP_GPIOIntClear(GPIO_PORTF_BASE,GPIO_PIN_1);              //limpiamos flags
+//    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
+//    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
+//}

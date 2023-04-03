@@ -129,6 +129,19 @@ void GUIPanel::readRequest()
                     }
                         break;
 
+                    case MENSAJE_BUTTONS:
+                    {
+                        PARAM_MENSAJE_BUTTONS parametro;
+                        if (check_and_extract_message_param(ptrtoparam, tam, sizeof(parametro),&parametro)>0){
+                            // OJO! Propiedad "autoexclusive" de los botones debe estar desactivada!!!
+                            ui->ledDer->setChecked(parametro.button.fRight);
+                            ui->ledIzq->setChecked(parametro.button.fLeft);
+                            ui->ledMid->setChecked(parametro.button.fMid);
+                        }// else TRATAMIENTO DE ERRORES
+                        break;
+                    }
+                        break;
+
                     case MENSAJE_NO_IMPLEMENTADO:
                     {
                         // En otros mensajes hay que extraer los parametros de la trama y copiarlos
