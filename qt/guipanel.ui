@@ -320,6 +320,41 @@
       </color>
      </property>
     </widget>
+    <widget class="QwtTextLabel" name="ENERGIA_TOTAL">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>170</y>
+       <width>100</width>
+       <height>20</height>
+      </rect>
+     </property>
+     <property name="plainText">
+      <string>Energia Total</string>
+     </property>
+    </widget>
+    <widget class="Counter" name="Energy_dial">
+     <property name="geometry">
+      <rect>
+       <x>240</x>
+       <y>120</y>
+       <width>151</width>
+       <height>40</height>
+      </rect>
+     </property>
+     <property name="toolTip">
+      <string/>
+     </property>
+     <property name="whatsThis">
+      <string/>
+     </property>
+     <property name="value">
+      <number>100000</number>
+     </property>
+     <property name="digits">
+      <number>6</number>
+     </property>
+    </widget>
    </widget>
    <widget class="QWidget" name="tab_2">
     <attribute name="title">

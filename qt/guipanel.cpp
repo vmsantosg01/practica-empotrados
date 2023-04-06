@@ -137,8 +137,17 @@ void GUIPanel::readRequest()
                             ui->ledDer->setChecked(parametro.button.fRight);
                             ui->ledIzq->setChecked(parametro.button.fLeft);
                             ui->ledMid->setChecked(parametro.button.fMid);
-                        }// else TRATAMIENTO DE ERRORES
+                        }
+                    }
                         break;
+
+                    case MENSAJE_ENERGY:
+                    {
+                        PARAM_MENSAJE_ENERGY parametro;
+                        if (check_and_extract_message_param(ptrtoparam, tam, sizeof(parametro),&parametro)>0){
+                            // OJO! Propiedad "autoexclusive" de los botones debe estar desactivada!!!
+                            ui->Energy_dial->setValue(parametro.energy);
+                        }
                     }
                         break;
 

@@ -42,6 +42,7 @@
 #include <serial2USBprotocol.h>
 #include <usb_dev_serial.h>
 #include "usb_messages_table.h"
+#include "config.h"
 
 //DEFINICION MACROS
 
@@ -59,11 +60,12 @@
 // Variables globales "main"
 uint32_t g_ui32CPUUsage;
 uint32_t g_ui32SystemClock;
+uint32_t debug;
 
-SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex;
-TimerHandle_t xTimer;
-QueueHandle_t cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot; //
-static QueueSetHandle_t grupo_colas;
+SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex,semaforo_energy;
+TimerHandle_t xTimer,xTimer2;
+QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot, cola_velocity; //
+static QueueSetHandle_t grupo_colas,grupo_colas_energy;
 
 //*****************************************************************************
 //
@@ -212,6 +214,7 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
                        vMotor[1] = parametro.valor_motor_2;
                        xQueueSend(cola_freertos_mot,vMotor,500);
                        xQueueSend(cola_freertos_mot2,vMotor,500);
+                       xQueueSend(cola_energy,vMotor,500);
                     }else{//Error
                         ui32Errors++; // Tratamiento del error
                     }
@@ -367,11 +370,63 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
     }
 }
 
+//*************************** TAREA ENERGIA ************************************//
+static portTASK_FUNCTION( EnergyTask, pvParameters )
+{
+    uint8_t pui8Frame[MAX_FRAME_SIZE];  //Ojo, esto hace que esta tarea necesite bastante pila
+    QueueSetMemberHandle_t  Activado;
+    PARAM_MENSAJE_ENERGY parametro;
+    int32_t i32Numdatos;
+    int8_t vMotor[2];
+    uint32_t systemEnergy = MAX_ENERGY;
+    uint8_t mot1consumo,mot2consumo;
+    //
+    // Loop forever.
+    //
+    while(1)
+    {
+        Activado = xQueueSelectFromSet( grupo_colas_energy, portMAX_DELAY);
+        if (Activado==cola_energy)
+        {
+            xQueueReceive(cola_energy,vMotor,0);
+            xSemaphoreTake(semaforo_energy,0);
+
+            mot1consumo = abs(vMotor[0]);   //Calculamos los consumos
+            mot2consumo = abs(vMotor[1]);
+
+        }else if(Activado==semaforo_energy){
+            xSemaphoreTake(semaforo_energy,0); //cierra el semaforo para que pueda volver a darse
+        }
+
+        systemEnergy -= (mot1consumo + mot2consumo);
+        parametro.energy = systemEnergy;
+
+        i32Numdatos=create_frame(pui8Frame,MENSAJE_ENERGY,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
+        if (i32Numdatos>=0)
+        {
+            xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
+            send_frame(pui8Frame,i32Numdatos);
+            xSemaphoreGive(USBSemaphoreMutex);
+            debug = systemEnergy;
+        }
+    }
+}
+
+
 //*************************** TAREA TIMER DATOS ************************************//
 
 void vTimerCallback( TimerHandle_t pxTimer )
 {
-    xSemaphoreGive(semaforo_freertos2);
+    if(pxTimer == xTimer)
+    {
+        xSemaphoreGive(semaforo_freertos2);
+    }
+
+    if(pxTimer == xTimer2)
+    {
+        xSemaphoreGive(semaforo_energy);
+    }
+
 }
 
 //**********************************************************************************************************************************************************
@@ -454,11 +509,16 @@ int main(void)
     {
         while(1);
     }
+    if(xTaskCreate(EnergyTask, "Energia",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
+    {
+        while(1);
+    }
 
     cola_freertos_bot=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
     if (NULL==cola_freertos_bot)
         while(1);
 
+    // "Creacion timer 200 ms"
     xTimer = xTimerCreate("TimerSW", TIEMPOT1 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
     if( NULL == xTimer )
              {
@@ -470,6 +530,19 @@ int main(void)
             while(1);
         }
     }
+    // "Creacion timer 1 s"
+    xTimer2 = xTimerCreate("TimerSW2", configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
+    if( NULL == xTimer2 )
+             {
+                while(1);
+             }
+    else{
+        if( xTimerStart( xTimer2, 0 ) != pdPASS ) //Inicializacion timerSW
+        {
+            while(1);
+        }
+    }
+
 
     //Creamos la cola
     cola_freertos_mot=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
@@ -483,8 +556,18 @@ int main(void)
     if (NULL==cola_freertos_mot2)
     while(1); // Si hay problemas para crear la cola, se queda aquí.
 
+    cola_energy=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
+    if (NULL==cola_energy)
+    while(1); // Si hay problemas para crear la cola, se queda aquí.
+
     semaforo_freertos2=xSemaphoreCreateBinary();
     if ((semaforo_freertos2==NULL))
+    {
+        while (1);  //No hay memoria para los semaforo
+    }
+
+    semaforo_energy=xSemaphoreCreateBinary();
+    if ((semaforo_energy==NULL))
     {
         while (1);  //No hay memoria para los semaforo
     }
@@ -498,6 +581,19 @@ int main(void)
         while(1);
     }
     if (xQueueAddToSet(semaforo_freertos2, grupo_colas)!=pdPASS)
+    {
+        while(1);
+    }
+
+    grupo_colas_energy = xQueueCreateSet( POSICIONES_COLA + 1);    // El de la cola, mas uno por cada semaforo binario
+    if (NULL == grupo_colas_energy)
+        while(1);
+
+    if (xQueueAddToSet(cola_energy, grupo_colas_energy)!=pdPASS)
+    {
+        while(1);
+    }
+    if (xQueueAddToSet(semaforo_energy, grupo_colas_energy)!=pdPASS)
     {
         while(1);
     }

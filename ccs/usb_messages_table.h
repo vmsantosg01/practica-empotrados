@@ -16,6 +16,7 @@ typedef enum {
     MENSAJE_SLITHERS,
     MENSAJE_DATOS_VELOCIDAD,
     MENSAJE_BUTTONS,
+    MENSAJE_ENERGY,
     //etc, etc...
 } messageTypes;
 
@@ -40,6 +41,10 @@ typedef struct {
     float rVel;
     int32_t rAngle;
 }PACKED PARAM_MENSAJE_DATOS_VELOCIDAD;
+
+typedef struct {
+    uint32_t energy;
+}PACKED PARAM_MENSAJE_ENERGY;
 
 typedef union {
     struct {
