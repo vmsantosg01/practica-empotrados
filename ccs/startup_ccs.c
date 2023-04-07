@@ -62,7 +62,7 @@ extern void xPortSysTickHandler(void);
 extern void UARTStdioIntHandler(void);
 extern void USB0DeviceIntHandler(void);
 extern void GPIOFIntHandler(void);
-//extern void GPIODIntHandler(void);
+extern void GPIODIntHandler(void);
 //*****************************************************************************
 //
 // The vector table.  Note that the proper constructs must be placed on this to
@@ -93,7 +93,7 @@ void (* const g_pfnVectors[])(void) =
  IntDefaultHandler,                      // GPIO Port A
  IntDefaultHandler,                      // GPIO Port B
  IntDefaultHandler,                      // GPIO Port C
- IntDefaultHandler,                      // GPIO Port D             GPIODIntHandler,
+ GPIODIntHandler,                      // GPIO Port D             GPIODIntHandler,
  IntDefaultHandler,                      // GPIO Port E
  UARTStdioIntHandler,                    // UART0 Rx and Tx
  IntDefaultHandler,                      // UART1 Rx and Tx

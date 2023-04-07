@@ -50,6 +50,7 @@
 #define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
 #define POSICIONES_COLA 3
 #define TIEMPOT1 0.2
+#define BOTON3 GPIO_PIN_1
 
 // Definiciones de tareas
 #define PWMTASKPRIO 1           // Prioridad para la tarea PWMTASK
@@ -64,8 +65,8 @@ uint32_t debug;
 
 SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex,semaforo_energy;
 TimerHandle_t xTimer,xTimer2;
-QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot, cola_velocity; //
-static QueueSetHandle_t grupo_colas,grupo_colas_energy;
+QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2;
+static QueueSetHandle_t grupo_colas,grupo_colas_energy,grupo_colas_bot;
 
 //*****************************************************************************
 //
@@ -269,17 +270,17 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
             ui32DutyCycle2 = (abs(vMotor[1])/100.0) * PERIOD_PWM;
 
             if(ui32DutyCycle1!=0){
-                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_6,ui32DutyCycle1 ); // Establece ciclo de trabajo 1
-                PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, true); // Habilita salidas PWMbit6
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_2,ui32DutyCycle1 ); // Establece ciclo de trabajo 1
+                PWMOutputState(PWM1_BASE, PWM_OUT_2_BIT, true); // Habilita salidas PWMbit2
             }else{
-                PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT, false); // deshabilita salida PWMbit6
+                PWMOutputState(PWM1_BASE, PWM_OUT_2_BIT, false); // deshabilita salida PWMbit2
             }
 
             if(ui32DutyCycle2!=0){
-                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7,ui32DutyCycle2); // Establece ciclo de trabajo 2
-                PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, true); // Habilita salidas PWMbit7
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_3,ui32DutyCycle2); // Establece ciclo de trabajo 2
+                PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, true); // Habilita salidas PWMbit3
             }else{
-                PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, false); // deshabilita salida PWMbit7
+                PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, false); // deshabilita salida PWMbit3
             }
 
         }else{  //Por esta rama nunca llega excepto que la espera no sea portMAX_DELAY
@@ -345,28 +346,40 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
     PARAM_MENSAJE_BUTTONS parametro;
     int32_t i32Numdatos;
     int32_t i32Status;
+    QueueSetMemberHandle_t  Activado;
     //
     // Loop forever.
     //
     while(1)
     {
-        if (xQueueReceive(cola_freertos_bot,&i32Status,portMAX_DELAY)==pdTRUE)
+
+        Activado = xQueueSelectFromSet( grupo_colas_bot, portMAX_DELAY);
+        if (Activado==cola_freertos_bot)
         {
+            xQueueReceive(cola_freertos_bot,&i32Status,0);
             parametro.ui8Buttons=0;
             if((i32Status & LEFT_BUTTON) == 0)
                 parametro.button.fLeft = 1;
             if((i32Status & RIGHT_BUTTON) == 0)
                 parametro.button.fRight = 1;
+
+        }
+
+        if(Activado==cola_freertos_bot2){
+            xQueueReceive(cola_freertos_bot2,&i32Status,0);
             if((i32Status & MID_BUTTON) == 0)
                 parametro.button.fMid = 1;
-            i32Numdatos=create_frame(pui8Frame,MENSAJE_BUTTONS,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
-            if (i32Numdatos>=0)
-            {
-                xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
-                send_frame(pui8Frame,i32Numdatos);
-                xSemaphoreGive(USBSemaphoreMutex);
-            }
         }
+
+        i32Numdatos=create_frame(pui8Frame,MENSAJE_BUTTONS,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
+        if (i32Numdatos>=0)
+        {
+            xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
+            send_frame(pui8Frame,i32Numdatos);
+            xSemaphoreGive(USBSemaphoreMutex);
+        }
+
+        parametro.button.fMid = 0;
     }
 }
 
@@ -379,7 +392,8 @@ static portTASK_FUNCTION( EnergyTask, pvParameters )
     int32_t i32Numdatos;
     int8_t vMotor[2];
     uint32_t systemEnergy = MAX_ENERGY;
-    uint8_t mot1consumo,mot2consumo;
+    uint8_t mot1consumo = 0;
+    uint8_t mot2consumo = 0;
     //
     // Loop forever.
     //
@@ -407,7 +421,6 @@ static portTASK_FUNCTION( EnergyTask, pvParameters )
             xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
             send_frame(pui8Frame,i32Numdatos);
             xSemaphoreGive(USBSemaphoreMutex);
-            debug = systemEnergy;
         }
     }
 }
@@ -451,32 +464,33 @@ int main(void)
 
     SysCtlPWMClockSet(SYSCTL_PWMDIV_2);  // NHR: Configure PWM Clock divide system clock by 2
 
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF); // NHR: Se usara salidas puerto F para PWM
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE); // NHR: Se usara salidas puerto F para PWM
     SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM1);  // NHR: Se usa el PWM1
 
-    GPIOPinConfigure(GPIO_PF2_M1PWM6); // NHR: Configura PF2 como salida 6 del modulo PWM 1(ver pinmap.h)
-    GPIOPinConfigure(GPIO_PF3_M1PWM7); // NHR: Configura PF3 como salida 7 del modulo PWM 1(ver pinmap.h)
-    GPIOPinTypePWM(GPIO_PORTF_BASE, GPIO_PIN_3 | GPIO_PIN_2); // NHR: PF2 y PF3 van a tener funcn PWM
+    GPIOPinConfigure(GPIO_PE5_M1PWM3); // NHR: Configura PE5 como salida 3 del modulo PWM 1(ver pinmap.h)
+    GPIOPinConfigure(GPIO_PE4_M1PWM2); // NHR: Configura PE4 como salida 2 del modulo PWM 1(ver pinmap.h)
+    GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_5 | GPIO_PIN_4); // NHR: PE5 y PE4 van a tener funcion PWM
 
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_PWM1);
 
     //___________________________CONFIGURACIONES INICIALES BOTONES___________________________________//
     ButtonsInit();
     //ESTAS SON PARA EL BOTON EXTRA (PinD1)
-//    ROM_GPIODirModeSet(GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_DIR_MODE_IN); //
-//    MAP_GPIOPadConfigSet(GPIO_PORTD_BASE, GPIO_PIN_1,
-//                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
+    ROM_GPIODirModeSet(GPIO_PORTD_BASE, BOTON3, GPIO_DIR_MODE_IN); //
+    MAP_GPIOPadConfigSet(GPIO_PORTD_BASE, BOTON3,
+                         GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
     MAP_GPIOIntTypeSet(GPIO_PORTF_BASE, ALL_BUTTONS,GPIO_BOTH_EDGES);
-//    MAP_GPIOIntTypeSet(GPIO_PORTD_BASE, GPIO_PIN_1,GPIO_BOTH_EDGES);
+    MAP_GPIOIntTypeSet(GPIO_PORTD_BASE, BOTON3,GPIO_BOTH_EDGES);
 
     MAP_IntPrioritySet(INT_GPIOF,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
-//    MAP_IntPrioritySet(INT_GPIOD,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
+    MAP_IntPrioritySet(INT_GPIOD,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
     // Una prioridad menor (mayor numero) podria dar problemas si la interrupcion
     // ejecuta llamadas a funciones de FreeRTOS
     MAP_GPIOIntEnable(GPIO_PORTF_BASE,ALL_BUTTONS);
     MAP_IntEnable(INT_GPIOF);
-//    MAP_GPIOIntEnable(GPIO_PORTD_BASE,GPIO_PIN_1);
-//    MAP_IntEnable(INT_GPIOD);
+    MAP_GPIOIntEnable(GPIO_PORTD_BASE,BOTON3);
+    MAP_IntEnable(INT_GPIOD);
 
     /**********************CREACION TAREAS******************************/
 
@@ -517,6 +531,12 @@ int main(void)
     cola_freertos_bot=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
     if (NULL==cola_freertos_bot)
         while(1);
+    cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
+    if (NULL==cola_freertos_bot2)
+        while(1);
+//    cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
+//    if (NULL==cola_freertos_bot2)
+//        while(1);
 
     // "Creacion timer 200 ms"
     xTimer = xTimerCreate("TimerSW", TIEMPOT1 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
@@ -598,6 +618,19 @@ int main(void)
         while(1);
     }
 
+    grupo_colas_bot = xQueueCreateSet(6);    // El de la cola, mas uno por cada semaforo binario
+    if (NULL == grupo_colas_bot)
+        while(1);
+
+    if (xQueueAddToSet(cola_freertos_bot, grupo_colas_bot)!=pdPASS)
+    {
+        while(1);
+    }
+    if (xQueueAddToSet(cola_freertos_bot2, grupo_colas_bot)!=pdPASS)
+    {
+        while(1);
+    }
+
     USBSemaphoreMutex = xSemaphoreCreateMutex();
     if (NULL == USBSemaphoreMutex)
     {
@@ -622,12 +655,12 @@ void GPIOFIntHandler(void)
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 } //TIENES QUE CREARLA PARA EL PUERTO D Y EN EL FICHERO DE LAS INTERRUPCIONES TAMBIEN
 
-//void GPIODIntHandler(void)
-//{
-//    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
-//    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTD_BASE,GPIO_PIN_1);
-//    xQueueSendFromISR (cola_freertos_bot,&i32Status,&higherPriorityTaskWoken);
-//    MAP_GPIOIntClear(GPIO_PORTF_BASE,GPIO_PIN_1);              //limpiamos flags
-//    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
-//    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
-//}
+void GPIODIntHandler(void)
+{
+    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
+    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTD_BASE,BOTON3);
+    xQueueSendFromISR (cola_freertos_bot2,&i32Status,&higherPriorityTaskWoken);
+    MAP_GPIOIntClear(GPIO_PORTD_BASE,BOTON3);              //limpiamos flags
+    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
+    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
+}
