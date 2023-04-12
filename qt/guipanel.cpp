@@ -134,9 +134,10 @@ void GUIPanel::readRequest()
                         PARAM_MENSAJE_BUTTONS parametro;
                         if (check_and_extract_message_param(ptrtoparam, tam, sizeof(parametro),&parametro)>0){
                             // OJO! Propiedad "autoexclusive" de los botones debe estar desactivada!!!
-                            ui->ledDer->setChecked(parametro.button.fRight);
-                            ui->ledIzq->setChecked(parametro.button.fLeft);
-                            ui->ledMid->setChecked(parametro.button.fMid);
+                            ui->ledDer->setChecked(parametro.fRight);
+                            ui->ledIzq->setChecked(parametro.fLeft);
+                            ui->ledMid->setChecked(parametro.fMid);
+                            ui->thermometer->setValue(parametro.distADC);
                         }
                     }
                         break;

@@ -62,7 +62,8 @@ extern void xPortSysTickHandler(void);
 extern void UARTStdioIntHandler(void);
 extern void USB0DeviceIntHandler(void);
 extern void GPIOFIntHandler(void);
-extern void GPIODIntHandler(void);
+//extern void GPIODIntHandler(void);
+extern void ADCIntHandler(void);
 //*****************************************************************************
 //
 // The vector table.  Note that the proper constructs must be placed on this to
@@ -93,7 +94,7 @@ void (* const g_pfnVectors[])(void) =
  IntDefaultHandler,                      // GPIO Port A
  IntDefaultHandler,                      // GPIO Port B
  IntDefaultHandler,                      // GPIO Port C
- GPIODIntHandler,                      // GPIO Port D             GPIODIntHandler,
+ GPIOFIntHandler,                      // GPIO Port D             GPIODIntHandler,
  IntDefaultHandler,                      // GPIO Port E
  UARTStdioIntHandler,                    // UART0 Rx and Tx
  IntDefaultHandler,                      // UART1 Rx and Tx
@@ -105,7 +106,7 @@ void (* const g_pfnVectors[])(void) =
  IntDefaultHandler,                      // PWM Generator 2
  IntDefaultHandler,                      // Quadrature Encoder 0
  IntDefaultHandler,                      // ADC Sequence 0
- IntDefaultHandler,                      // ADC Sequence 1
+ ADCIntHandler,                      // ADC Sequence 1
  IntDefaultHandler,                      // ADC Sequence 2
  IntDefaultHandler,                      // ADC Sequence 3
  IntDefaultHandler,                      // Watchdog timer

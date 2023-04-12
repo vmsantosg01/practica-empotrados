@@ -355,6 +355,25 @@
       <number>6</number>
      </property>
     </widget>
+    <widget class="ThermoMeter" name="thermometer">
+     <property name="geometry">
+      <rect>
+       <x>450</x>
+       <y>240</y>
+       <width>40</width>
+       <height>160</height>
+      </rect>
+     </property>
+     <property name="toolTip">
+      <string>Shows the pressure</string>
+     </property>
+     <property name="whatsThis">
+      <string>The bar meter widget displays the pressure attached to it</string>
+     </property>
+     <property name="maximum">
+      <double>70.000000000000000</double>
+     </property>
+    </widget>
    </widget>
    <widget class="QWidget" name="tab_2">
     <attribute name="title">
@@ -423,6 +442,11 @@
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
+  <customwidget>
+   <class>ThermoMeter</class>
+   <extends>QWidget</extends>
+   <header>analogwidgets/thermometer.h</header>
+  </customwidget>
   <customwidget>
    <class>Led</class>
    <extends>QWidget</extends>

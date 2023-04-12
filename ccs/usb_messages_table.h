@@ -46,13 +46,11 @@ typedef struct {
     uint32_t energy;
 }PACKED PARAM_MENSAJE_ENERGY;
 
-typedef union {
-    struct {
-        uint8_t fLeft:1;
-        uint8_t fRight:1;
-        uint8_t fMid:1;
-    } PACKED button;
-    uint8_t  ui8Buttons;
+typedef struct {
+    uint8_t fLeft:1;
+    uint8_t fRight:1;
+    uint8_t fMid:1;
+    uint8_t distADC;
 } PACKED PARAM_MENSAJE_BUTTONS;
 
 //#pragma pack()    //...Pero solo para los mensajes que voy a intercambiar, no para el resto

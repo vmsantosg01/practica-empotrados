@@ -46,6 +46,9 @@
 
 //DEFINICION MACROS
 
+
+//void ADCIntHandler(void);
+
 #define DIV_RELOJ_PWM   2
 #define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
 #define POSICIONES_COLA 3
@@ -65,8 +68,8 @@ uint32_t debug;
 
 SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex,semaforo_energy;
 TimerHandle_t xTimer,xTimer2;
-QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2;
-static QueueSetHandle_t grupo_colas,grupo_colas_energy,grupo_colas_bot;
+QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2,cola_gled,cola_ADC;
+static QueueSetHandle_t grupo_colas,grupo_colas_energy,grupo_colas_bot,grupo_colas_pwm;
 
 //*****************************************************************************
 //
@@ -251,9 +254,11 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
 static portTASK_FUNCTION(PWMTask,pvParameters)
 {
     //Initial configuration
-    uint32_t ui32DutyCycle1,ui32DutyCycle2;
+    QueueSetMemberHandle_t  Activado;
+    uint32_t ui32DutyCycle1,ui32DutyCycle2,ui32DutyCycle3;
     uint32_t periodPWM = PERIOD_PWM; // Configuramos la frecuencia de 50Hz
     int8_t vMotor[2];
+    uint32_t systemEnergy;
 
     PWMGenConfigure(PWM1_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC); // Configuramos el generador PWM
     PWMGenPeriodSet(PWM1_BASE, PWM_GEN_3, periodPWM); // Establece periodo
@@ -264,8 +269,11 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
     //
     while(1)
     {
-        if (xQueueReceive(cola_freertos_mot,vMotor,portMAX_DELAY)==pdTRUE){ // Cambiar portMAX_DELAY por 500 para apagado automatico 5 seg despues
 
+        Activado = xQueueSelectFromSet( grupo_colas_pwm, portMAX_DELAY);
+        if (Activado==cola_freertos_mot)
+        {
+            xQueueReceive(cola_freertos_mot,vMotor,0);
             ui32DutyCycle1 = (abs(vMotor[0])/100.0) * PERIOD_PWM;   //Calculamos los ciclos de trabajo
             ui32DutyCycle2 = (abs(vMotor[1])/100.0) * PERIOD_PWM;
 
@@ -283,9 +291,41 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
                 PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, false); // deshabilita salida PWMbit3
             }
 
-        }else{  //Por esta rama nunca llega excepto que la espera no sea portMAX_DELAY
-            while(1);
+        }else if(Activado==cola_gled){          //En principio esto enciende el led verde con la intensidad de systemEnergy/MAX_ENERGY en tanto por uno
+            xQueueReceive(cola_gled,&systemEnergy,0);
+            ui32DutyCycle3 = ((float)systemEnergy/MAX_ENERGY) * PERIOD_PWM;   //Calculamos los ciclos de trabajo
+
+            if(ui32DutyCycle3!=0){
+                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_7,ui32DutyCycle3 ); // Establece ciclo de trabajo 1
+                PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, true); // Habilita salidas PWMbit2
+            }else{
+                PWMOutputState(PWM1_BASE, PWM_OUT_7_BIT, false); // deshabilita salida PWMbit2
+            }
+
         }
+//        Si se enciende led verde quitar este comentado <---------------------
+//        if (xQueueReceive(cola_freertos_mot,vMotor,portMAX_DELAY)==pdTRUE){ // Cambiar portMAX_DELAY por 500 para apagado automatico 5 seg despues
+//
+//            ui32DutyCycle1 = (abs(vMotor[0])/100.0) * PERIOD_PWM;   //Calculamos los ciclos de trabajo
+//            ui32DutyCycle2 = (abs(vMotor[1])/100.0) * PERIOD_PWM;
+//
+//            if(ui32DutyCycle1!=0){
+//                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_2,ui32DutyCycle1 ); // Establece ciclo de trabajo 1
+//                PWMOutputState(PWM1_BASE, PWM_OUT_2_BIT, true); // Habilita salidas PWMbit2
+//            }else{
+//                PWMOutputState(PWM1_BASE, PWM_OUT_2_BIT, false); // deshabilita salida PWMbit2
+//            }
+//
+//            if(ui32DutyCycle2!=0){
+//                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_3,ui32DutyCycle2); // Establece ciclo de trabajo 2
+//                PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, true); // Habilita salidas PWMbit3
+//            }else{
+//                PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, false); // deshabilita salida PWMbit3
+//            }
+//
+//        }else{  //Por esta rama nunca llega excepto que la espera no sea portMAX_DELAY
+//            while(1);
+//        }
 
     }
 }
@@ -347,6 +387,7 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
     int32_t i32Numdatos;
     int32_t i32Status;
     QueueSetMemberHandle_t  Activado;
+    uint32_t valor_potenciometro;
     //
     // Loop forever.
     //
@@ -354,21 +395,24 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
     {
 
         Activado = xQueueSelectFromSet( grupo_colas_bot, portMAX_DELAY);
+
         if (Activado==cola_freertos_bot)
         {
+            parametro.fLeft = 0;
+            parametro.fRight = 0;
+            parametro.fMid = 0;
             xQueueReceive(cola_freertos_bot,&i32Status,0);
-            parametro.ui8Buttons=0;
             if((i32Status & LEFT_BUTTON) == 0)
-                parametro.button.fLeft = 1;
+                parametro.fLeft = 1;
             if((i32Status & RIGHT_BUTTON) == 0)
-                parametro.button.fRight = 1;
-
+                parametro.fRight = 1;
+            if((i32Status & MID_BUTTON) == 0)
+                parametro.fMid = 1;
         }
 
-        if(Activado==cola_freertos_bot2){
-            xQueueReceive(cola_freertos_bot2,&i32Status,0);
-            if((i32Status & MID_BUTTON) == 0)
-                parametro.button.fMid = 1;
+        if(Activado==cola_ADC){
+            xQueueReceive(cola_ADC,&valor_potenciometro,0);
+            parametro.distADC = (valor_potenciometro * 70)/4095;
         }
 
         i32Numdatos=create_frame(pui8Frame,MENSAJE_BUTTONS,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
@@ -379,7 +423,8 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
             xSemaphoreGive(USBSemaphoreMutex);
         }
 
-        parametro.button.fMid = 0;
+
+ //       parametro.button.fMid = 0;
     }
 }
 
@@ -414,6 +459,7 @@ static portTASK_FUNCTION( EnergyTask, pvParameters )
 
         systemEnergy -= (mot1consumo + mot2consumo);
         parametro.energy = systemEnergy;
+        xQueueSend(cola_gled,&systemEnergy,500);
 
         i32Numdatos=create_frame(pui8Frame,MENSAJE_ENERGY,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
         if (i32Numdatos>=0)
@@ -464,12 +510,15 @@ int main(void)
 
     SysCtlPWMClockSet(SYSCTL_PWMDIV_2);  // NHR: Configure PWM Clock divide system clock by 2
 
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE); // NHR: Se usara salidas puerto F para PWM
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE); // NHR: Se usara salidas puerto E para PWM
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF); // NHR: Se usara salidas puerto F para PWM
     SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM1);  // NHR: Se usa el PWM1
 
     GPIOPinConfigure(GPIO_PE5_M1PWM3); // NHR: Configura PE5 como salida 3 del modulo PWM 1(ver pinmap.h)
     GPIOPinConfigure(GPIO_PE4_M1PWM2); // NHR: Configura PE4 como salida 2 del modulo PWM 1(ver pinmap.h)
+    GPIOPinConfigure(GPIO_PF3_M1PWM7); // NHR: Configura PF3omo salida 7 del modulo PWM 1(ver pinmap.h)
     GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_5 | GPIO_PIN_4); // NHR: PE5 y PE4 van a tener funcion PWM
+    GPIOPinTypePWM(GPIO_PORTF_BASE, GPIO_PIN_3); // NHR: PE5 y PE4 van a tener funcion PWM
 
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_PWM1);
 
@@ -491,6 +540,38 @@ int main(void)
     MAP_IntEnable(INT_GPIOF);
     MAP_GPIOIntEnable(GPIO_PORTD_BASE,BOTON3);
     MAP_IntEnable(INT_GPIOD);
+
+    //___________________________CONFIGURACIONES INICIALES ADC___________________________________//
+    MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2);
+    MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_TIMER2);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    MAP_GPIOPadConfigSet(GPIO_PORTE_BASE, GPIO_PIN_3, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_ANALOG);
+
+
+    TimerConfigure(TIMER2_BASE,TIMER_CFG_PERIODIC);
+    TimerLoadSet(TIMER2_BASE, TIMER_A, g_ui32SystemClock * 0.25 -1);
+    TimerEnable(TIMER2_BASE,TIMER_A);
+    //timer configurado
+
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);   // Habilita ADC0
+    SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_ADC0);   // Habilita ADC0
+    ADCSequenceDisable(ADC0_BASE, 1); // Deshabilita el secuenciador 1 del ADC0 para su configuracion
+    ADCSequenceConfigure(ADC0_BASE, 1, ADC_TRIGGER_TIMER, 0);
+    TimerControlTrigger(TIMER2_BASE,TIMER_A,true);
+    ADCHardwareOversampleConfigure(ADC0_BASE,64);
+    // Configuramos los 4 conversores del secuenciador 1 para muestreo del sensor de temperatura
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 0, ADC_CTL_CH0);
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 1, ADC_CTL_CH0);
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 2, ADC_CTL_CH0);
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 3, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END); // El conversor 4 es el ultimo, y  se genera un aviso de interrupcion
+    // Tras configurar el secuenciador, se vuelve a habilitar
+
+    // Instrucciones relacionadas con la habilitación de interrupciones
+    IntEnable(INT_ADC0SS1); // Habilitación a nivel global del sistema
+    ADCIntEnable(ADC0_BASE,1); // Habilitación del secuenciador dentro del periférico
+    ADCIntClear(ADC0_BASE,1); // Borramos posibles interrupciones pendientes
+
+    ADCSequenceEnable(ADC0_BASE, 1);
 
     /**********************CREACION TAREAS******************************/
 
@@ -523,6 +604,7 @@ int main(void)
     {
         while(1);
     }
+
     if(xTaskCreate(EnergyTask, "Energia",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
     {
         while(1);
@@ -534,6 +616,9 @@ int main(void)
     cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
     if (NULL==cola_freertos_bot2)
         while(1);
+    cola_gled=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
+        if (NULL==cola_freertos_bot2)
+            while(1);
 //    cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
 //    if (NULL==cola_freertos_bot2)
 //        while(1);
@@ -580,6 +665,10 @@ int main(void)
     if (NULL==cola_energy)
     while(1); // Si hay problemas para crear la cola, se queda aquí.
 
+    cola_ADC=xQueueCreate(3,sizeof(uint32_t));
+    if (NULL==cola_ADC)
+    while(1); // Si hay problemas para crear la cola, se queda aquí.
+
     semaforo_freertos2=xSemaphoreCreateBinary();
     if ((semaforo_freertos2==NULL))
     {
@@ -618,7 +707,7 @@ int main(void)
         while(1);
     }
 
-    grupo_colas_bot = xQueueCreateSet(6);    // El de la cola, mas uno por cada semaforo binario
+    grupo_colas_bot = xQueueCreateSet(9);    // El de la cola, mas uno por cada semaforo binario
     if (NULL == grupo_colas_bot)
         while(1);
 
@@ -630,6 +719,23 @@ int main(void)
     {
         while(1);
     }
+    if (xQueueAddToSet(cola_ADC, grupo_colas_bot)!=pdPASS)
+    {
+        while(1);
+    }
+
+    grupo_colas_pwm = xQueueCreateSet( POSICIONES_COLA + 6);    // El de la colas
+        if (NULL == grupo_colas_pwm)
+            while(1);
+
+        if (xQueueAddToSet(cola_freertos_mot, grupo_colas_pwm)!=pdPASS)
+        {
+            while(1);
+        }
+        if (xQueueAddToSet(cola_gled, grupo_colas_pwm)!=pdPASS)
+        {
+            while(1);
+        }
 
     USBSemaphoreMutex = xSemaphoreCreateMutex();
     if (NULL == USBSemaphoreMutex)
@@ -649,18 +755,33 @@ void GPIOFIntHandler(void)
 {
     signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
     int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTF_BASE,ALL_BUTTONS);
+    i32Status |= MAP_GPIOPinRead(GPIO_PORTD_BASE,BOTON3);
     xQueueSendFromISR (cola_freertos_bot,&i32Status,&higherPriorityTaskWoken);
     MAP_GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS);              //limpiamos flags
+    MAP_GPIOIntClear(GPIO_PORTD_BASE,BOTON3);
     //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 } //TIENES QUE CREARLA PARA EL PUERTO D Y EN EL FICHERO DE LAS INTERRUPCIONES TAMBIEN
 
-void GPIODIntHandler(void)
+//void GPIODIntHandler(void)
+//{
+//    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
+//    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTD_BASE,BOTON3);
+//    xQueueSendFromISR (cola_freertos_bot2,&i32Status,&higherPriorityTaskWoken);
+//    MAP_GPIOIntClear(GPIO_PORTD_BASE,BOTON3);              //limpiamos flags
+//    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
+//    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
+//}
+
+void ADCIntHandler(void)
 {
+    uint32_t valor_potenciometro;
+    uint32_t ui32ADC0Value[4];
     signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
-    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTD_BASE,BOTON3);
-    xQueueSendFromISR (cola_freertos_bot2,&i32Status,&higherPriorityTaskWoken);
-    MAP_GPIOIntClear(GPIO_PORTD_BASE,BOTON3);              //limpiamos flags
+    ADCIntClear(ADC0_BASE, 1);
+    ADCSequenceDataGet(ADC0_BASE, 1, ui32ADC0Value);
+    valor_potenciometro = ((ui32ADC0Value[0] + ui32ADC0Value[1] + ui32ADC0Value[2] + ui32ADC0Value[3])/4)+0.5;
+    xQueueSendFromISR (cola_ADC,&valor_potenciometro,&higherPriorityTaskWoken);
     //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
