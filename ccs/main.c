@@ -1,17 +1,7 @@
 //*****************************************************************************
 //
-// Codigo de partida comunicacion TIVA-QT (Abril2021)
-// Autores: Eva Gonzalez, Ignacio Herrero, Jose Manuel Cano
-//
-//  Estructura de aplicacion basica para el desarrollo de aplicaciones genericas
-//  basada en la TIVA, en las que existe un intercambio de mensajes con un interfaz
-//  gr√°fico (GUI) Qt.
-//  La aplicacion se basa en un intercambio de mensajes con ordenes e informacion, a traves  de la
-//  configuracion de un perfil CDC de USB (emulacion de puerto serie) y un protocolo
-//  de comunicacion con el PC que permite recibir ciertas ordenes y enviar determinados datos en respuesta.
-//   En el ejemplo basico de partida se implementara la recepcion de un mensaje
-//  generico que permite el apagado y encendido de los LEDs de la placa; asi como un segundo
-//  mensaje enviado desde la placa al GUI, para mostrar el estado de los botones.
+//  CODIGO PRACTICA 1 SISTEMAS EMPOTRADOS
+//  AUTOR: VICTOR MANUEL SANTOS GARCIA
 //
 //*****************************************************************************
 #include<stdbool.h>
@@ -43,11 +33,6 @@
 #include <usb_dev_serial.h>
 #include "usb_messages_table.h"
 #include "config.h"
-
-//DEFINICION MACROS
-
-
-//void ADCIntHandler(void);
 
 #define DIV_RELOJ_PWM   2
 #define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
@@ -263,10 +248,7 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
     PWMGenConfigure(PWM1_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC); // Configuramos el generador PWM
     PWMGenPeriodSet(PWM1_BASE, PWM_GEN_3, periodPWM); // Establece periodo
     PWMGenEnable(PWM1_BASE, PWM_GEN_3); // Habilita generador
-//    PWMOutputState(PWM1_BASE, PWM_OUT_6_BIT | PWM_OUT_7_BIT, true); // Habilita salidas PWM (Dejemos que empicen a 0)
-    //
-    // Loop forever.
-    //
+
     while(1)
     {
 
@@ -303,30 +285,6 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
             }
 
         }
-//        Si se enciende led verde quitar este comentado <---------------------
-//        if (xQueueReceive(cola_freertos_mot,vMotor,portMAX_DELAY)==pdTRUE){ // Cambiar portMAX_DELAY por 500 para apagado automatico 5 seg despues
-//
-//            ui32DutyCycle1 = (abs(vMotor[0])/100.0) * PERIOD_PWM;   //Calculamos los ciclos de trabajo
-//            ui32DutyCycle2 = (abs(vMotor[1])/100.0) * PERIOD_PWM;
-//
-//            if(ui32DutyCycle1!=0){
-//                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_2,ui32DutyCycle1 ); // Establece ciclo de trabajo 1
-//                PWMOutputState(PWM1_BASE, PWM_OUT_2_BIT, true); // Habilita salidas PWMbit2
-//            }else{
-//                PWMOutputState(PWM1_BASE, PWM_OUT_2_BIT, false); // deshabilita salida PWMbit2
-//            }
-//
-//            if(ui32DutyCycle2!=0){
-//                PWMPulseWidthSet(PWM1_BASE, PWM_OUT_3,ui32DutyCycle2); // Establece ciclo de trabajo 2
-//                PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, true); // Habilita salidas PWMbit3
-//            }else{
-//                PWMOutputState(PWM1_BASE, PWM_OUT_3_BIT, false); // deshabilita salida PWMbit3
-//            }
-//
-//        }else{  //Por esta rama nunca llega excepto que la espera no sea portMAX_DELAY
-//            while(1);
-//        }
-
     }
 }
 
@@ -380,6 +338,7 @@ static portTASK_FUNCTION(VelTask,pvParameters)
 }
 
 //*************************** TAREA BOTONES ************************************//
+
 static portTASK_FUNCTION( ButtonsTask, pvParameters )
 {
     uint8_t pui8Frame[MAX_FRAME_SIZE];  //Ojo, esto hace que esta tarea necesite bastante pila
@@ -429,6 +388,7 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
 }
 
 //*************************** TAREA ENERGIA ************************************//
+
 static portTASK_FUNCTION( EnergyTask, pvParameters )
 {
     uint8_t pui8Frame[MAX_FRAME_SIZE];  //Ojo, esto hace que esta tarea necesite bastante pila
@@ -490,7 +450,7 @@ void vTimerCallback( TimerHandle_t pxTimer )
 
 //**********************************************************************************************************************************************************
 //
-// --------------------------------------- MAIN ------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------- MAIN -------------------------------------------------------------------------------------
 //
 //**********************************************************************************************************************************************************
 int main(void)
@@ -518,11 +478,12 @@ int main(void)
     GPIOPinConfigure(GPIO_PE4_M1PWM2); // NHR: Configura PE4 como salida 2 del modulo PWM 1(ver pinmap.h)
     GPIOPinConfigure(GPIO_PF3_M1PWM7); // NHR: Configura PF3omo salida 7 del modulo PWM 1(ver pinmap.h)
     GPIOPinTypePWM(GPIO_PORTE_BASE, GPIO_PIN_5 | GPIO_PIN_4); // NHR: PE5 y PE4 van a tener funcion PWM
-    GPIOPinTypePWM(GPIO_PORTF_BASE, GPIO_PIN_3); // NHR: PE5 y PE4 van a tener funcion PWM
+    GPIOPinTypePWM(GPIO_PORTF_BASE, GPIO_PIN_3); // NHR: PF3 va a tener funcion PWM
 
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_PWM1);
 
     //___________________________CONFIGURACIONES INICIALES BOTONES___________________________________//
+
     ButtonsInit();
     //ESTAS SON PARA EL BOTON EXTRA (PinD1)
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
@@ -542,6 +503,7 @@ int main(void)
     MAP_IntEnable(INT_GPIOD);
 
     //___________________________CONFIGURACIONES INICIALES ADC___________________________________//
+
     MAP_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2);
     MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_TIMER2);
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
@@ -573,7 +535,9 @@ int main(void)
 
     ADCSequenceEnable(ADC0_BASE, 1);
 
-    /**********************CREACION TAREAS******************************/
+
+    //-------------------------------------------------------------------------------------------------------------------------------------------------
+
 
     // Inicializa el sistema de depuracion por terminal UART
     if (initCommandLine(256,tskIDLE_PRIORITY + 1) != pdTRUE)
@@ -582,9 +546,11 @@ int main(void)
     }
 
     USBSerialInit(32,32);	//Inicializo el  sistema USB
-    //
-    // Crea las tareas
-    //
+
+    //*****************************************************************************************
+    //---------------------------------- CREACION TAREAS --------------------------------------
+    //*****************************************************************************************
+
     if(xTaskCreate(USBMessageProcessingTask,"usbser",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
     {
         while(1);
@@ -610,18 +576,37 @@ int main(void)
         while(1);
     }
 
-    cola_freertos_bot=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
+    // ____________________ CREACION DE COLAS _________________________ //
+
+    cola_freertos_bot=xQueueCreate(3,sizeof(int32_t));
     if (NULL==cola_freertos_bot)
         while(1);
-    cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
+
+    cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));
     if (NULL==cola_freertos_bot2)
         while(1);
-    cola_gled=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
-        if (NULL==cola_freertos_bot2)
-            while(1);
-//    cola_freertos_bot2=xQueueCreate(3,sizeof(int32_t));  //espacio para 3items de tamulong
-//    if (NULL==cola_freertos_bot2)
-//        while(1);
+
+    cola_gled=xQueueCreate(3,sizeof(int32_t));
+    if (NULL==cola_freertos_bot2)
+        while(1);
+
+    cola_freertos_mot=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
+    if (NULL==cola_freertos_mot)
+        while(1);
+
+    cola_freertos_mot2=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
+    if (NULL==cola_freertos_mot2)
+        while(1);
+
+    cola_energy=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
+    if (NULL==cola_energy)
+        while(1);
+
+    cola_ADC=xQueueCreate(3,sizeof(uint32_t));
+    if (NULL==cola_ADC)
+        while(1);
+
+    // ______________________________ CREACION TIMERS _______________________________ //
 
     // "Creacion timer 200 ms"
     xTimer = xTimerCreate("TimerSW", TIEMPOT1 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
@@ -648,40 +633,23 @@ int main(void)
         }
     }
 
-
-    //Creamos la cola
-    cola_freertos_mot=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
-    if (NULL==cola_freertos_mot)
-    while(1); // Si hay problemas para crear la cola, se queda aquÌ.
-
-    //********* Cosas para la especificacion 2 *******//
-
-    //Creamos la cola
-    cola_freertos_mot2=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
-    if (NULL==cola_freertos_mot2)
-    while(1); // Si hay problemas para crear la cola, se queda aquÌ.
-
-    cola_energy=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
-    if (NULL==cola_energy)
-    while(1); // Si hay problemas para crear la cola, se queda aquÌ.
-
-    cola_ADC=xQueueCreate(3,sizeof(uint32_t));
-    if (NULL==cola_ADC)
-    while(1); // Si hay problemas para crear la cola, se queda aquÌ.
+    // ___________________ CREACION SEMAFOROS ____________________ //
 
     semaforo_freertos2=xSemaphoreCreateBinary();
     if ((semaforo_freertos2==NULL))
     {
-        while (1);  //No hay memoria para los semaforo
+        while (1);
     }
 
     semaforo_energy=xSemaphoreCreateBinary();
     if ((semaforo_energy==NULL))
     {
-        while (1);  //No hay memoria para los semaforo
+        while (1);
     }
 
-    grupo_colas = xQueueCreateSet( POSICIONES_COLA + 1);    // El de la cola, mas uno por cada semaforo binario
+    // ___________________________ DEFINICION GRUPOS DE COLAS ___________________________ //
+
+    grupo_colas = xQueueCreateSet( POSICIONES_COLA + 1);
     if (NULL == grupo_colas)
         while(1);
 
@@ -694,7 +662,7 @@ int main(void)
         while(1);
     }
 
-    grupo_colas_energy = xQueueCreateSet( POSICIONES_COLA + 1);    // El de la cola, mas uno por cada semaforo binario
+    grupo_colas_energy = xQueueCreateSet( POSICIONES_COLA + 1);
     if (NULL == grupo_colas_energy)
         while(1);
 
@@ -707,7 +675,7 @@ int main(void)
         while(1);
     }
 
-    grupo_colas_bot = xQueueCreateSet(9);    // El de la cola, mas uno por cada semaforo binario
+    grupo_colas_bot = xQueueCreateSet(9);
     if (NULL == grupo_colas_bot)
         while(1);
 
@@ -724,7 +692,7 @@ int main(void)
         while(1);
     }
 
-    grupo_colas_pwm = xQueueCreateSet( POSICIONES_COLA + 6);    // El de la colas
+    grupo_colas_pwm = xQueueCreateSet( POSICIONES_COLA + 6);
         if (NULL == grupo_colas_pwm)
             while(1);
 
@@ -737,19 +705,19 @@ int main(void)
             while(1);
         }
 
-    USBSemaphoreMutex = xSemaphoreCreateMutex();
+    USBSemaphoreMutex = xSemaphoreCreateMutex(); // Creacion del mutex
     if (NULL == USBSemaphoreMutex)
     {
-        while (1);  //No hay memoria para los semaforo
+        while (1);
     }
-    //
-    // Arranca el  scheduler.  Pasamos a ejecutar las tareas que se hayan activado.
-    //
-    vTaskStartScheduler();	//el RTOS habilita las interrupciones al entrar aqui, asi que no hace falta habilitarlas
 
-    //De la funcion vTaskStartScheduler no se sale nunca... a partir de aqui pasan a ejecutarse las tareas.
+    vTaskStartScheduler(); // Arrancamos el organizador de tareas
     while(1);
 }
+
+// ***********************************************************************************************
+// ------------------------------------ INTERRUPCIONES -------------------------------------------
+// ***********************************************************************************************
 
 void GPIOFIntHandler(void)
 {
@@ -762,16 +730,6 @@ void GPIOFIntHandler(void)
     //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 } //TIENES QUE CREARLA PARA EL PUERTO D Y EN EL FICHERO DE LAS INTERRUPCIONES TAMBIEN
-
-//void GPIODIntHandler(void)
-//{
-//    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
-//    int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTD_BASE,BOTON3);
-//    xQueueSendFromISR (cola_freertos_bot2,&i32Status,&higherPriorityTaskWoken);
-//    MAP_GPIOIntClear(GPIO_PORTD_BASE,BOTON3);              //limpiamos flags
-//    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
-//    portEND_SWITCHING_ISR(higherPriorityTaskWoken);
-//}
 
 void ADCIntHandler(void)
 {
