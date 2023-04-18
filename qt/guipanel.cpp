@@ -142,6 +142,17 @@ void GUIPanel::readRequest()
                     }
                         break;
 
+                    case MENSAJE_ALARM:
+                    {
+                        PARAM_MENSAJE_ALARM parametro;
+                        if (check_and_extract_message_param(ptrtoparam, tam, sizeof(parametro),&parametro)>0){
+                            ui->checkBoxQuemaMotores->setChecked(parametro.motorHot);
+                            ui->checkBoxCaida->setChecked(parametro.robotFall);
+                            ui->checkBoxEnergy->setChecked(parametro.lowEnergy);
+                        }
+                    }
+                        break;
+
                     case MENSAJE_ENERGY:
                     {
                         PARAM_MENSAJE_ENERGY parametro;

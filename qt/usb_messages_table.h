@@ -16,6 +16,7 @@ typedef enum {
     MENSAJE_DATOS_VELOCIDAD,
     MENSAJE_BUTTONS,
     MENSAJE_ENERGY,
+    MENSAJE_ALARM,
     //etc, etc...
 } messageTypes;
 
@@ -49,8 +50,14 @@ typedef struct {
 } PACKED PARAM_MENSAJE_BUTTONS;
 
 typedef struct {
-    uint32_t energy;
+    int32_t energy;
 }PACKED PARAM_MENSAJE_ENERGY;
+
+typedef struct {
+    bool lowEnergy;
+    bool robotFall;
+    bool motorHot;
+} PACKED PARAM_MENSAJE_ALARM;
 
 #pragma pack()    //...Pero solo para los mensajes que voy a intercambiar, no para el resto
 
