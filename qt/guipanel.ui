@@ -259,8 +259,8 @@
     <widget class="Led" name="ledIzq">
      <property name="geometry">
       <rect>
-       <x>140</x>
-       <y>210</y>
+       <x>470</x>
+       <y>310</y>
        <width>16</width>
        <height>16</height>
       </rect>
@@ -278,8 +278,8 @@
     <widget class="Led" name="ledDer">
      <property name="geometry">
       <rect>
-       <x>200</x>
-       <y>210</y>
+       <x>570</x>
+       <y>310</y>
        <width>16</width>
        <height>16</height>
       </rect>
@@ -297,8 +297,8 @@
     <widget class="Led" name="ledMid">
      <property name="geometry">
       <rect>
-       <x>170</x>
-       <y>260</y>
+       <x>520</x>
+       <y>450</y>
        <width>16</width>
        <height>16</height>
       </rect>
@@ -358,8 +358,8 @@
     <widget class="ThermoMeter" name="thermometer">
      <property name="geometry">
       <rect>
-       <x>450</x>
-       <y>240</y>
+       <x>610</x>
+       <y>310</y>
        <width>40</width>
        <height>160</height>
       </rect>
@@ -380,8 +380,8 @@
      </property>
      <property name="geometry">
       <rect>
-       <x>7</x>
-       <y>340</y>
+       <x>10</x>
+       <y>400</y>
        <width>91</width>
        <height>22</height>
       </rect>
@@ -393,8 +393,8 @@
     <widget class="QCheckBox" name="checkBoxCaida">
      <property name="geometry">
       <rect>
-       <x>7</x>
-       <y>370</y>
+       <x>10</x>
+       <y>430</y>
        <width>91</width>
        <height>22</height>
       </rect>
@@ -406,8 +406,8 @@
     <widget class="QCheckBox" name="checkBoxQuemaMotores">
      <property name="geometry">
       <rect>
-       <x>7</x>
-       <y>400</y>
+       <x>10</x>
+       <y>460</y>
        <width>91</width>
        <height>22</height>
       </rect>
@@ -419,14 +419,58 @@
     <widget class="QCheckBox" name="checkBoxEnergyb4k">
      <property name="geometry">
       <rect>
-       <x>15</x>
-       <y>310</y>
+       <x>20</x>
+       <y>370</y>
        <width>81</width>
        <height>20</height>
       </rect>
      </property>
      <property name="text">
       <string>Energy b4k</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label">
+     <property name="geometry">
+      <rect>
+       <x>490</x>
+       <y>340</y>
+       <width>71</width>
+       <height>91</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+     <property name="pixmap">
+      <pixmap resource="GUIPractica.qrc">:/imagenes/Robot.png</pixmap>
+     </property>
+     <property name="scaledContents">
+      <bool>true</bool>
+     </property>
+    </widget>
+    <widget class="QLabel" name="explosion">
+     <property name="enabled">
+      <bool>true</bool>
+     </property>
+     <property name="geometry">
+      <rect>
+       <x>150</x>
+       <y>80</y>
+       <width>391</width>
+       <height>351</height>
+      </rect>
+     </property>
+     <property name="accessibleDescription">
+      <string/>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+     <property name="pixmap">
+      <pixmap resource="GUIPractica.qrc">:/imagenes/explosion.png</pixmap>
+     </property>
+     <property name="scaledContents">
+      <bool>true</bool>
      </property>
     </widget>
    </widget>
@@ -538,6 +582,8 @@
   <tabstop>pingButton</tabstop>
   <tabstop>runButton</tabstop>
  </tabstops>
- <resources/>
+ <resources>
+  <include location="GUIPractica.qrc"/>
+ </resources>
  <connections/>
 </ui>

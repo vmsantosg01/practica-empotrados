@@ -55,6 +55,8 @@ GUIPanel::GUIPanel(QWidget *parent) :  // Constructor de la clase
     ventanaPopUp.setStandardButtons(QMessageBox::Ok);
     ventanaPopUp.setWindowTitle(tr("Evento"));
     ventanaPopUp.setParent(this,Qt::Popup);
+
+    ui->explosion->setVisible(false); //oculta la explosion
 }
 
 GUIPanel::~GUIPanel() // Destructor de la clase
@@ -150,6 +152,8 @@ void GUIPanel::readRequest()
                             ui->checkBoxCaida->setChecked(parametro.robotFall);
                             ui->checkBoxEnergy->setChecked(parametro.lowEnergy);
                             ui->checkBoxEnergyb4k->setChecked(parametro.energybelow4k);
+                            ui->explosion->setVisible(parametro.robotFall);
+
                         }
                     }
                         break;
