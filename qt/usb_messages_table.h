@@ -57,6 +57,7 @@ typedef struct {
     bool lowEnergy;
     bool robotFall;
     bool motorHot;
+    bool energybelow4k;
 } PACKED PARAM_MENSAJE_ALARM;
 
 #pragma pack()    //...Pero solo para los mensajes que voy a intercambiar, no para el resto

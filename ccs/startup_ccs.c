@@ -35,6 +35,7 @@ void ResetISR(void);
 static void NmiSR(void);
 static void FaultISR(void);
 static void IntDefaultHandler(void);
+static void RGBBlinkIntHandler(void);
 
 //*****************************************************************************
 //
@@ -196,7 +197,7 @@ void (* const g_pfnVectors[])(void) =
  IntDefaultHandler,                      // Wide Timer 4 subtimer A
  IntDefaultHandler,                      // Wide Timer 4 subtimer B
  IntDefaultHandler,                      // Wide Timer 5 subtimer A
- IntDefaultHandler,                      // Wide Timer 5 subtimer B
+ RGBBlinkIntHandler,                      // Wide Timer 5 subtimer B
  IntDefaultHandler,                      // FPU
  0,                                      // Reserved
  0,                                      // Reserved

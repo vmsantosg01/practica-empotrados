@@ -149,6 +149,7 @@ void GUIPanel::readRequest()
                             ui->checkBoxQuemaMotores->setChecked(parametro.motorHot);
                             ui->checkBoxCaida->setChecked(parametro.robotFall);
                             ui->checkBoxEnergy->setChecked(parametro.lowEnergy);
+                            ui->checkBoxEnergyb4k->setChecked(parametro.energybelow4k);
                         }
                     }
                         break;

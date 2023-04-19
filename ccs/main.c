@@ -33,6 +33,7 @@
 #include <usb_dev_serial.h>
 #include "usb_messages_table.h"
 #include "config.h"
+#include "event_groups.h"        // FreeRTOS: definiciones relacionadas con grupos de eventos
 
 #define DIV_RELOJ_PWM   2
 #define PERIOD_PWM (SysCtlClockGet()*0.0025)/DIV_RELOJ_PWM //Periodo = 0.02 ms
@@ -40,20 +41,34 @@
 #define TIEMPOT1 0.2
 #define BOTON3 GPIO_PIN_1
 
+
+
+//Etiquetas de ayuda para que quede ms legible
+//puedo definir hasta 8 con la configuracion que he cogido.
+#define LOWENERGY 0x0001
+#define ENERGYOUT 0x0002
+#define CAIDA 0x0004
+//#define TASK2_DONE_FLAG 0x0008
+//#define BUTTON1b_FLAG 0x0010
+//#define BUTTON2b_FLAG 0x0020
+
 // Definiciones de tareas
 #define PWMTASKPRIO 1           // Prioridad para la tarea PWMTASK
-#define PWMTASKSTACKSIZE 128    // Tamaño de pila para la tarea PWMTASK
+#define PWMTASKSTACKSIZE 128    // Tamano de pila para la tarea PWMTASK
 #define VELTASKPRIO 1           // Prioridad para la tarea PWMTASK
-#define VELTASKSTACKSIZE 128    // Tamaño de pila para la tarea PWMTASK
+#define VELTASKSTACKSIZE 128    // Tamano de pila para la tarea PWMTASK
 
 // Variables globales "main"
 uint32_t g_ui32CPUUsage;
 uint32_t g_ui32SystemClock;
 uint32_t debug;
 
+
+static EventGroupHandle_t FlagsEventosAlarm;
+TaskHandle_t pwmtask_handler,vel_handler,alarmtask_handler,energytask_handler,buttontask_handler;
 SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex,semaforo_energy;
 TimerHandle_t xTimer,xTimer2;
-QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2,cola_gled,cola_ADC;
+QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2,cola_gled,cola_ADC,cola_alarm_energy, cola_giroscopio;
 static QueueSetHandle_t grupo_colas,grupo_colas_energy,grupo_colas_bot,grupo_colas_pwm;
 
 //*****************************************************************************
@@ -125,7 +140,7 @@ void vApplicationMallocFailedHook (void)
 
 static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
 
-    uint8_t pui8Frame[MAX_FRAME_SIZE];	//Ojo, esto hace que esta tarea necesite bastante pila
+    uint8_t pui8Frame[MAX_FRAME_SIZE];  //Ojo, esto hace que esta tarea necesite bastante pila
     int32_t i32Numdatos;
     uint8_t ui8Message;
     void *ptrtoreceivedparam;
@@ -145,8 +160,8 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
         //Espera hasta que se reciba una trama con datos serializados por el interfaz USB
         i32Numdatos=receive_frame(pui8Frame,MAX_FRAME_SIZE); //Esta funcion es bloqueante
         if (i32Numdatos>0)
-        {	//Si no hay error, proceso la trama que ha llegado.
-            i32Numdatos=destuff_and_check_checksum(pui8Frame,i32Numdatos); // Primero, "destuffing" y comprobaciï¿½n checksum
+        {   //Si no hay error, proceso la trama que ha llegado.
+            i32Numdatos=destuff_and_check_checksum(pui8Frame,i32Numdatos); // Primero, "destuffing" y comprobacinn checksum
             if (i32Numdatos<0)
             {
                 //Error de checksum (PROT_ERROR_BAD_CHECKSUM), ignorar el paquete
@@ -179,10 +194,10 @@ static portTASK_FUNCTION( USBMessageProcessingTask, pvParameters ){
                             // Procesamiento del error NO MEMORY
                             break;
                         case PROT_ERROR_STUFFED_FRAME_TOO_LONG:
-                            //							// Procesamiento del error STUFFED_FRAME_TOO_LONG
+                            //                          // Procesamiento del error STUFFED_FRAME_TOO_LONG
                             break;
                         case PROT_ERROR_MESSAGE_TOO_LONG:
-                            //							// Procesamiento del error MESSAGE TOO LONG
+                            //                          // Procesamiento del error MESSAGE TOO LONG
                             break;
                         }
                         case PROT_ERROR_INCORRECT_PARAM_SIZE:
@@ -243,11 +258,15 @@ static portTASK_FUNCTION(PWMTask,pvParameters)
     uint32_t ui32DutyCycle1,ui32DutyCycle2,ui32DutyCycle3;
     uint32_t periodPWM = PERIOD_PWM; // Configuramos la frecuencia de 50Hz
     int8_t vMotor[2];
-    uint32_t systemEnergy;
+    int32_t systemEnergy;
 
     PWMGenConfigure(PWM1_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC); // Configuramos el generador PWM
     PWMGenPeriodSet(PWM1_BASE, PWM_GEN_3, periodPWM); // Establece periodo
     PWMGenEnable(PWM1_BASE, PWM_GEN_3); // Habilita generador
+
+    PWMGenConfigure(PWM1_BASE, PWM_GEN_1, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC); // Configuramos el generador PWM
+    PWMGenPeriodSet(PWM1_BASE, PWM_GEN_1, periodPWM); // Establece periodo
+    PWMGenEnable(PWM1_BASE, PWM_GEN_1); // Habilita generador
 
     while(1)
     {
@@ -337,7 +356,7 @@ static portTASK_FUNCTION(VelTask,pvParameters)
     }
 }
 
-//*************************** TAREA BOTONES ************************************//
+//*************************** TAREA SENSORES ************************************//
 
 static portTASK_FUNCTION( ButtonsTask, pvParameters )
 {
@@ -346,7 +365,8 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
     int32_t i32Numdatos;
     int32_t i32Status;
     QueueSetMemberHandle_t  Activado;
-    uint32_t valor_potenciometro;
+    uint32_t valor_potenciometro,valor_giroscopioant,valor_giroscopio;
+    bool first = true;
     //
     // Loop forever.
     //
@@ -374,6 +394,20 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
             parametro.distADC = (valor_potenciometro * 70)/4095;
         }
 
+        if(Activado==cola_giroscopio){
+            xQueueReceive(cola_giroscopio,&valor_giroscopio,0);
+
+            if(first){
+                valor_giroscopioant = valor_giroscopio;
+                first = false;
+            }
+
+            if(abs(valor_giroscopioant - valor_giroscopio) > 2048){
+                xEventGroupSetBits(FlagsEventosAlarm, CAIDA);
+            }
+            valor_giroscopioant = valor_giroscopio;
+        }
+
         i32Numdatos=create_frame(pui8Frame,MENSAJE_BUTTONS,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
         if (i32Numdatos>=0)
         {
@@ -396,9 +430,10 @@ static portTASK_FUNCTION( EnergyTask, pvParameters )
     PARAM_MENSAJE_ENERGY parametro;
     int32_t i32Numdatos;
     int8_t vMotor[2];
-    uint32_t systemEnergy = MAX_ENERGY;
+    int32_t systemEnergy = 8000; //MAX_ENERGY;
     uint8_t mot1consumo = 0;
     uint8_t mot2consumo = 0;
+    bool first_time = true;
     //
     // Loop forever.
     //
@@ -418,10 +453,85 @@ static portTASK_FUNCTION( EnergyTask, pvParameters )
         }
 
         systemEnergy -= (mot1consumo + mot2consumo);
+        if(systemEnergy < 0){
+            systemEnergy = 0;
+            xEventGroupSetBits(FlagsEventosAlarm, ENERGYOUT);
+        }else if(systemEnergy < 4000 && first_time){
+            first_time = false;
+            xEventGroupSetBits(FlagsEventosAlarm, LOWENERGY);
+        }
+
         parametro.energy = systemEnergy;
         xQueueSend(cola_gled,&systemEnergy,500);
 
         i32Numdatos=create_frame(pui8Frame,MENSAJE_ENERGY,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
+        if (i32Numdatos>=0)
+        {
+            xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
+            send_frame(pui8Frame,i32Numdatos);
+            xSemaphoreGive(USBSemaphoreMutex);
+        }
+    }
+}
+
+static portTASK_FUNCTION( AlarmTask, pvParameters )
+{
+    uint8_t pui8Frame[MAX_FRAME_SIZE];  //Ojo, esto hace que esta tarea necesite bastante pila
+    PARAM_MENSAJE_ALARM parametro;
+    int32_t i32Numdatos;
+    EventBits_t uxBits;
+
+    uint32_t ui32Color[3];
+
+    ui32Color[RED] = 0xFFF0;   // Minimo: 0; Maxima 0xFFFF
+    ui32Color[BLUE] = 0x0; // Minimo: 0; Maxima 0xFFFF
+    ui32Color[GREEN] = 0x0;    // Minimo: 0; Maxima 0xFFFF
+
+    parametro.lowEnergy = false;
+    parametro.motorHot = false;
+    parametro.robotFall = false;
+    parametro.energybelow4k = false;
+
+    //
+    // Loop forever.
+    //
+    while(1)
+    {
+        uxBits = xEventGroupWaitBits(FlagsEventosAlarm,LOWENERGY|ENERGYOUT|CAIDA,pdTRUE,pdFALSE,portMAX_DELAY);
+
+        if ((uxBits & LOWENERGY) == LOWENERGY){
+            RGBInit(0);
+            RGBEnable();              // Habilita la generacion PWM para el encendido de los LEDs
+            RGBSet(ui32Color,0.99);
+
+            RGBBlinkRateSet(1.0f);
+            parametro.energybelow4k = true;
+        }
+
+        else if ((uxBits & ENERGYOUT) == ENERGYOUT){
+            RGBSet(ui32Color,0.99);
+            RGBBlinkRateSet(2.0f);  //parpadeo 2 segundos
+            parametro.lowEnergy = true;
+
+            vTaskSuspend(pwmtask_handler);
+            vTaskSuspend(energytask_handler);
+            vTaskSuspend(vel_handler);
+        }
+
+        else if ((uxBits & CAIDA) == CAIDA){
+            RGBInit(0);
+            RGBEnable();              // Habilita la generacion PWM para el encendido de los LEDs
+            parametro.robotFall = true;
+            RGBSet(ui32Color,0.99);
+            RGBBlinkRateSet(50.0f);  //parpadeo cte
+
+            //FALTA DESACTIVAR INTERRUPCIONES
+            vTaskSuspend(pwmtask_handler);
+            vTaskSuspend(energytask_handler);
+            vTaskSuspend(vel_handler);
+        }
+
+        i32Numdatos=create_frame(pui8Frame,MENSAJE_ALARM,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
         if (i32Numdatos>=0)
         {
             xSemaphoreTake(USBSemaphoreMutex,portMAX_DELAY);
@@ -456,8 +566,10 @@ void vTimerCallback( TimerHandle_t pxTimer )
 int main(void)
 {
 
-    MAP_SysCtlClockSet(SYSCTL_SYSDIV_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);	//Ponemos el reloj principal a 40 MHz (200 Mhz del Pll dividido por 5)
+    MAP_SysCtlClockSet(SYSCTL_SYSDIV_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN); //Ponemos el reloj principal a 40 MHz (200 Mhz del Pll dividido por 5)
     g_ui32SystemClock = SysCtlClockGet(); // Get the system clock speed.
+
+    MAP_SysCtlPeripheralSleepEnable(SYSCTL_PERIPH_WTIMER5); // Para que funbcione el modulo rgb
 
     MAP_SysCtlPeripheralClockGating(true);  //Habilita el clock gating de los perifericos durante el bajo consumo
 
@@ -525,16 +637,21 @@ int main(void)
     ADCSequenceStepConfigure(ADC0_BASE, 1, 0, ADC_CTL_CH0);
     ADCSequenceStepConfigure(ADC0_BASE, 1, 1, ADC_CTL_CH0);
     ADCSequenceStepConfigure(ADC0_BASE, 1, 2, ADC_CTL_CH0);
-    ADCSequenceStepConfigure(ADC0_BASE, 1, 3, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END); // El conversor 4 es el ultimo, y  se genera un aviso de interrupcion
+    ADCSequenceStepConfigure(ADC0_BASE, 1, 3, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END); // El conversor 4 es el ultimo, y  se genera un aviso de interrupcion // este canal para leer y detectar caida
     // Tras configurar el secuenciador, se vuelve a habilitar
 
-    // Instrucciones relacionadas con la habilitación de interrupciones
-    IntEnable(INT_ADC0SS1); // Habilitación a nivel global del sistema
-    ADCIntEnable(ADC0_BASE,1); // Habilitación del secuenciador dentro del periférico
+    // Instrucciones relacionadas con la habilitacinn de interrupciones
+    IntEnable(INT_ADC0SS1); // Habilitacinn a nivel global del sistema
+    ADCIntEnable(ADC0_BASE,1); // Habilitacinn del secuenciador dentro del perifnrico
     ADCIntClear(ADC0_BASE,1); // Borramos posibles interrupciones pendientes
+    // FALTA ALGO PARA HABILITAR LA INTERRUPCION
 
     ADCSequenceEnable(ADC0_BASE, 1);
 
+    //___________________________CONFIGURACIONES INICIALES RGB___________________________________//
+
+//    RGBInit(0);
+//    RGBDisable();
 
     //-------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -545,33 +662,39 @@ int main(void)
         while(1);
     }
 
-    USBSerialInit(32,32);	//Inicializo el  sistema USB
+    USBSerialInit(32,32);   //Inicializo el  sistema USB
 
     //*****************************************************************************************
     //---------------------------------- CREACION TAREAS --------------------------------------
     //*****************************************************************************************
+
 
     if(xTaskCreate(USBMessageProcessingTask,"usbser",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
     {
         while(1);
     }
 
-    if((xTaskCreate(PWMTask, "PWM", PWMTASKSTACKSIZE, NULL ,tskIDLE_PRIORITY + PWMTASKPRIO, NULL) != pdPASS))
+    if((xTaskCreate(PWMTask, "PWM", PWMTASKSTACKSIZE, NULL ,tskIDLE_PRIORITY + PWMTASKPRIO, &pwmtask_handler) != pdPASS))
     {
         while(1);
     }
 
-    if((xTaskCreate(VelTask, "VelCalc", VELTASKSTACKSIZE, NULL ,tskIDLE_PRIORITY + VELTASKPRIO, NULL) != pdPASS))
+    if((xTaskCreate(VelTask, "VelCalc", VELTASKSTACKSIZE, NULL ,tskIDLE_PRIORITY + VELTASKPRIO, &vel_handler) != pdPASS))
     {
         while(1);
     }
 
-    if(xTaskCreate(ButtonsTask, "Botones",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
+    if(xTaskCreate(ButtonsTask, "Botones",512, NULL, tskIDLE_PRIORITY + 2, &buttontask_handler) != pdTRUE)
     {
         while(1);
     }
 
-    if(xTaskCreate(EnergyTask, "Energia",512, NULL, tskIDLE_PRIORITY + 2, NULL) != pdTRUE)
+    if(xTaskCreate(EnergyTask, "Energia",512, NULL, tskIDLE_PRIORITY + 2, &energytask_handler) != pdTRUE)
+    {
+        while(1);
+    }
+
+    if(xTaskCreate(AlarmTask, "Alarmas",512, NULL, tskIDLE_PRIORITY + 2, &alarmtask_handler) != pdTRUE)
     {
         while(1);
     }
@@ -605,6 +728,13 @@ int main(void)
     cola_ADC=xQueueCreate(3,sizeof(uint32_t));
     if (NULL==cola_ADC)
         while(1);
+    cola_giroscopio=xQueueCreate(1,sizeof(uint32_t));
+    if (NULL==cola_giroscopio)
+        while(1);
+
+//    cola_alarm_energy=xQueueCreate(POSICIONES_COLA,sizeof(uint32_t));
+//    if (NULL==cola_alarm_energy)
+//        while(1);
 
     // ______________________________ CREACION TIMERS _______________________________ //
 
@@ -675,7 +805,7 @@ int main(void)
         while(1);
     }
 
-    grupo_colas_bot = xQueueCreateSet(9);
+    grupo_colas_bot = xQueueCreateSet(10);
     if (NULL == grupo_colas_bot)
         while(1);
 
@@ -688,6 +818,10 @@ int main(void)
         while(1);
     }
     if (xQueueAddToSet(cola_ADC, grupo_colas_bot)!=pdPASS)
+    {
+        while(1);
+    }
+    if (xQueueAddToSet(cola_giroscopio, grupo_colas_bot)!=pdPASS)
     {
         while(1);
     }
@@ -704,6 +838,15 @@ int main(void)
         {
             while(1);
         }
+
+     // GRUPO EVENTOS
+
+    //Crea el grupo de eventos
+    FlagsEventosAlarm = xEventGroupCreate();
+    if( NULL ==  FlagsEventosAlarm)
+    {
+        while(1);
+    }
 
     USBSemaphoreMutex = xSemaphoreCreateMutex(); // Creacion del mutex
     if (NULL == USBSemaphoreMutex)
@@ -733,13 +876,16 @@ void GPIOFIntHandler(void)
 
 void ADCIntHandler(void)
 {
-    uint32_t valor_potenciometro;
+    uint32_t valor_potenciometro,valor_giroscopio;
     uint32_t ui32ADC0Value[4];
     signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
     ADCIntClear(ADC0_BASE, 1);
     ADCSequenceDataGet(ADC0_BASE, 1, ui32ADC0Value);
-    valor_potenciometro = ((ui32ADC0Value[0] + ui32ADC0Value[1] + ui32ADC0Value[2] + ui32ADC0Value[3])/4)+0.5;
+    valor_potenciometro = ((ui32ADC0Value[0] + ui32ADC0Value[1] + ui32ADC0Value[2])/3)+0.5;
+    valor_giroscopio = ui32ADC0Value[3];
     xQueueSendFromISR (cola_ADC,&valor_potenciometro,&higherPriorityTaskWoken);
+    xQueueSendFromISR (cola_giroscopio,&valor_giroscopio,&higherPriorityTaskWoken);
     //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
 }
+
