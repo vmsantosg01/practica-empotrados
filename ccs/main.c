@@ -400,9 +400,6 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
                 pressed_left = true;
 
             }else if(pressed_left){
-                xTimerReset( xTimerMot, 0 );
-                xTimerStop( xTimerMot, 0 );
-                xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
                 xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
                 pressed_left = false;
             }
@@ -414,9 +411,6 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
                 pressed_right = true;
 
             }else if(pressed_right){
-                xTimerReset( xTimerMot, 0 );
-                xTimerStop( xTimerMot, 0 );
-                xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
                 xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
                 pressed_right = false;
             }
@@ -429,9 +423,6 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
                 pressed_mid = true;
 
             }else if(pressed_mid){
-                xTimerReset( xTimerMot, 0 );
-                xTimerStop( xTimerMot, 0 );
-                xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
                 xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
                 pressed_mid = false;
             }
@@ -622,9 +613,9 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
         else if ((uxBits & SOLVED) == SOLVED){
             parametro.motorHot = false;
             burning = false;
-            xTimerStop( xTimerMot, 0 );
             xTimerReset( xTimerMot, 0 );
             xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
+            xTimerStop( xTimerMot, 0 );
         }
 
         i32Numdatos=create_frame(pui8Frame,MENSAJE_ALARM,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
