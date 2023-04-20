@@ -33,6 +33,7 @@
 #include <usb_dev_serial.h>
 #include "usb_messages_table.h"
 #include "config.h"
+#include <stdbool.h>
 #include "event_groups.h"        // FreeRTOS: definiciones relacionadas con grupos de eventos
 
 #define DIV_RELOJ_PWM   2
@@ -44,13 +45,14 @@
 
 
 //Etiquetas de ayuda para que quede ms legible
-//puedo definir hasta 8 con la configuracion que he cogido.
 #define LOWENERGY 0x0001
 #define ENERGYOUT 0x0002
 #define CAIDA 0x0004
-//#define TASK2_DONE_FLAG 0x0008
-//#define BUTTON1b_FLAG 0x0010
-//#define BUTTON2b_FLAG 0x0020
+#define BURNING 0x0008
+#define MOT_ENCEND 0x0010
+#define MOT_APAG 0x0020
+#define BURNED 0x0040
+#define SOLVED 0x0080
 
 // Definiciones de tareas
 #define PWMTASKPRIO 1           // Prioridad para la tarea PWMTASK
@@ -67,7 +69,7 @@ uint32_t debug;
 static EventGroupHandle_t FlagsEventosAlarm;
 TaskHandle_t pwmtask_handler,vel_handler,alarmtask_handler,energytask_handler,buttontask_handler;
 SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex,semaforo_energy;
-TimerHandle_t xTimer,xTimer2;
+TimerHandle_t xTimer,xTimer2,xTimerMot,xTimerMot2,xTimerMot3;
 QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2,cola_gled,cola_ADC,cola_alarm_energy, cola_giroscopio;
 static QueueSetHandle_t grupo_colas,grupo_colas_energy,grupo_colas_bot,grupo_colas_pwm;
 
@@ -331,6 +333,12 @@ static portTASK_FUNCTION(VelTask,pvParameters)
             xQueueReceive(cola_freertos_mot2,vMotor,0);
             xSemaphoreTake(semaforo_freertos2,0);
             parametro.rVel = (vMotor[0] + vMotor[1])/20.0;
+
+            if(parametro.rVel != 0){
+                xEventGroupSetBits(FlagsEventosAlarm, MOT_ENCEND);
+            }else{
+                xEventGroupSetBits(FlagsEventosAlarm, MOT_APAG);
+            }
         }else if(Activado==semaforo_freertos2){
             xSemaphoreTake(semaforo_freertos2,0); //cierra el semaforo para que pueda volver a darse
         }
@@ -367,6 +375,9 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
     QueueSetMemberHandle_t  Activado;
     uint32_t valor_potenciometro,valor_giroscopioant,valor_giroscopio;
     bool first = true;
+    bool pressed_left = false;
+    bool pressed_right = false;
+    bool pressed_mid = false;
     //
     // Loop forever.
     //
@@ -381,12 +392,51 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
             parametro.fRight = 0;
             parametro.fMid = 0;
             xQueueReceive(cola_freertos_bot,&i32Status,0);
-            if((i32Status & LEFT_BUTTON) == 0)
+
+            if((i32Status & LEFT_BUTTON) == 0){ //Left button pressed
                 parametro.fLeft = 1;
-            if((i32Status & RIGHT_BUTTON) == 0)
+                xTimerReset( xTimerMot, 0 );
+                xTimerStart( xTimerMot, 0 );
+                pressed_left = true;
+
+            }else if(pressed_left){
+                xTimerReset( xTimerMot, 0 );
+                xTimerStop( xTimerMot, 0 );
+                xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
+                xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
+                pressed_left = false;
+            }
+
+
+
+            if((i32Status & RIGHT_BUTTON) == 0){    //Right button pressed
                 parametro.fRight = 1;
-            if((i32Status & MID_BUTTON) == 0)
+                xTimerReset( xTimerMot2, 0 );
+                xTimerStart( xTimerMot2, 0 );
+                pressed_right = true;
+
+            }else if(pressed_right){
+                xTimerReset( xTimerMot2, 0 );
+                xTimerStop( xTimerMot2, 0 );
+                xTimerChangePeriod( xTimerMot2, 4 * configTICK_RATE_HZ, 0 );
+                xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
+                pressed_right = false;
+            }
+
+
+            if((i32Status & MID_BUTTON) == 0){  //Mid button pressed
                 parametro.fMid = 1;
+                xTimerReset( xTimerMot3, 0 );
+                xTimerStart( xTimerMot3, 0 );
+                pressed_mid = true;
+
+            }else if(pressed_mid){
+                xTimerReset( xTimerMot3, 0 );
+                xTimerStop( xTimerMot3, 0 );
+                xTimerChangePeriod( xTimerMot3, 4 * configTICK_RATE_HZ, 0 );
+                xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
+                pressed_mid = false;
+            }
         }
 
         if(Activado==cola_ADC){
@@ -480,6 +530,9 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
     PARAM_MENSAJE_ALARM parametro;
     int32_t i32Numdatos;
     EventBits_t uxBits;
+    bool burning = false;
+
+    bool motores_on = false;
 
     uint32_t ui32Color[3];
 
@@ -497,7 +550,7 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
     //
     while(1)
     {
-        uxBits = xEventGroupWaitBits(FlagsEventosAlarm,LOWENERGY|ENERGYOUT|CAIDA,pdTRUE,pdFALSE,portMAX_DELAY);
+        uxBits = xEventGroupWaitBits(FlagsEventosAlarm,LOWENERGY|ENERGYOUT|CAIDA|BURNING|MOT_ENCEND|MOT_APAG|BURNED|SOLVED ,pdTRUE,pdFALSE,portMAX_DELAY);
 
         if ((uxBits & LOWENERGY) == LOWENERGY){
             RGBInit(0);
@@ -531,6 +584,50 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
             vTaskSuspend(vel_handler);
         }
 
+        else if ((uxBits & BURNING) == BURNING){
+            if(motores_on){
+                parametro.motorHot = true;
+                if(!burning){
+                    burning = true;
+                    xTimerChangePeriod( xTimerMot, 6 * configTICK_RATE_HZ, 0 );
+                    xTimerReset( xTimerMot, 0 );
+                    xTimerStart( xTimerMot, 0 );
+                }else{
+                    RGBInit(0);
+                    RGBEnable();              // Habilita la generacion PWM para el encendido de los LEDs
+                    ui32Color[RED] = 0x0;   // Minimo: 0; Maxima 0xFFFF
+                    ui32Color[BLUE] = 0xFFF0; // Minimo: 0; Maxima 0xFFFF
+                    ui32Color[GREEN] = 0x0;    // Minimo: 0; Maxima 0xFFFF
+
+                    RGBSet(ui32Color,0.99);
+                    RGBBlinkRateSet(50.0f);
+
+                    vTaskSuspend(pwmtask_handler);
+                    vTaskSuspend(energytask_handler);
+                    vTaskSuspend(vel_handler);
+                }
+
+            }
+        }
+
+        else if ((uxBits & MOT_ENCEND) == MOT_ENCEND){
+            motores_on = true;
+        }
+
+        else if ((uxBits & MOT_APAG) == MOT_APAG){
+            motores_on = false;
+        }
+
+//        else if ((uxBits & BURNED) == BURNED){
+//
+//
+//        }
+
+        else if ((uxBits & SOLVED) == SOLVED){
+            parametro.motorHot = false;
+            burning = false;
+        }
+
         i32Numdatos=create_frame(pui8Frame,MENSAJE_ALARM,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
         if (i32Numdatos>=0)
         {
@@ -556,6 +653,20 @@ void vTimerCallback( TimerHandle_t pxTimer )
         xSemaphoreGive(semaforo_energy);
     }
 
+    if(pxTimer == xTimerMot)
+    {
+        xEventGroupSetBits(FlagsEventosAlarm, BURNING);
+    }
+
+//    if(pxTimer == xTimerMot2)
+//    {
+//        xEventGroupSetBits(FlagsEventosAlarm, BURNING);
+//    }
+//    if(pxTimer == xTimerMot3)
+//    {
+//        xEventGroupSetBits(FlagsEventosAlarm, BURNING);
+//    }
+    //TE HAS QUEDADO HACIENDO LO DE LOS TIMERS
 }
 
 //**********************************************************************************************************************************************************
@@ -607,8 +718,6 @@ int main(void)
 
     MAP_IntPrioritySet(INT_GPIOF,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
     MAP_IntPrioritySet(INT_GPIOD,configMAX_SYSCALL_INTERRUPT_PRIORITY);// Misma prioridad que configMAX_SYSCALL_INTERRUPT_PRIORITY
-    // Una prioridad menor (mayor numero) podria dar problemas si la interrupcion
-    // ejecuta llamadas a funciones de FreeRTOS
     MAP_GPIOIntEnable(GPIO_PORTF_BASE,ALL_BUTTONS);
     MAP_IntEnable(INT_GPIOF);
     MAP_GPIOIntEnable(GPIO_PORTD_BASE,BOTON3);
@@ -741,9 +850,9 @@ int main(void)
     // "Creacion timer 200 ms"
     xTimer = xTimerCreate("TimerSW", TIEMPOT1 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 200ms
     if( NULL == xTimer )
-             {
-                while(1);
-             }
+         {
+            while(1);
+         }
     else{
         if( xTimerStart( xTimer, 0 ) != pdPASS ) //Inicializacion timerSW
         {
@@ -753,9 +862,9 @@ int main(void)
     // "Creacion timer 1 s"
     xTimer2 = xTimerCreate("TimerSW2", configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
     if( NULL == xTimer2 )
-             {
-                while(1);
-             }
+         {
+            while(1);
+         }
     else{
         if( xTimerStart( xTimer2, 0 ) != pdPASS ) //Inicializacion timerSW
         {
@@ -763,6 +872,21 @@ int main(void)
         }
     }
 
+    xTimerMot = xTimerCreate("TimerMot", 4 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
+        if( NULL == xTimerMot )
+         {
+            while(1);
+         }
+    xTimerMot2 = xTimerCreate("TimerMot2", 4 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
+            if( NULL == xTimerMot )
+             {
+                while(1);
+             }
+    xTimerMot3 = xTimerCreate("TimerMot3", 4 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
+            if( NULL == xTimerMot )
+             {
+                while(1);
+             }
     // ___________________ CREACION SEMAFOROS ____________________ //
 
     semaforo_freertos2=xSemaphoreCreateBinary();
@@ -864,15 +988,14 @@ int main(void)
 
 void GPIOFIntHandler(void)
 {
-    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;   //Hay que inicializarlo a False!!
+    signed portBASE_TYPE higherPriorityTaskWoken=pdFALSE;
     int32_t i32Status = MAP_GPIOPinRead(GPIO_PORTF_BASE,ALL_BUTTONS);
     i32Status |= MAP_GPIOPinRead(GPIO_PORTD_BASE,BOTON3);
     xQueueSendFromISR (cola_freertos_bot,&i32Status,&higherPriorityTaskWoken);
-    MAP_GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS);              //limpiamos flags
+    MAP_GPIOIntClear(GPIO_PORTF_BASE,ALL_BUTTONS);
     MAP_GPIOIntClear(GPIO_PORTD_BASE,BOTON3);
-    //Cesion de control de CPU si se ha despertado una tarea de mayor prioridad
     portEND_SWITCHING_ISR(higherPriorityTaskWoken);
-} //TIENES QUE CREARLA PARA EL PUERTO D Y EN EL FICHERO DE LAS INTERRUPCIONES TAMBIEN
+}
 
 void ADCIntHandler(void)
 {
