@@ -61,6 +61,7 @@ public:
     QCheckBox *checkBoxEnergyb4k;
     QLabel *label;
     QLabel *explosion;
+    QCheckBox *checkBoxBurnt;
     QWidget *tab_2;
     QGroupBox *groupBoxCnx;
     QSplitter *splitter;
@@ -188,6 +189,9 @@ public:
         explosion->setGeometry(QRect(150, 80, 391, 351));
         explosion->setPixmap(QPixmap(QString::fromUtf8(":/imagenes/explosion.png")));
         explosion->setScaledContents(true);
+        checkBoxBurnt = new QCheckBox(tab);
+        checkBoxBurnt->setObjectName(QString::fromUtf8("checkBoxBurnt"));
+        checkBoxBurnt->setGeometry(QRect(10, 340, 91, 20));
         tabWidget->addTab(tab, QString());
         tab_2 = new QWidget();
         tab_2->setObjectName(QString::fromUtf8("tab_2"));
@@ -278,6 +282,7 @@ public:
         explosion->setAccessibleDescription(QString());
 #endif // QT_CONFIG(accessibility)
         explosion->setText(QString());
+        checkBoxBurnt->setText(QCoreApplication::translate("GUIPanel", "Motors Burnt", nullptr));
         tabWidget->setTabText(tabWidget->indexOf(tab), QCoreApplication::translate("GUIPanel", "Tab 1", nullptr));
         tabWidget->setTabText(tabWidget->indexOf(tab_2), QCoreApplication::translate("GUIPanel", "Tab 2", nullptr));
         groupBoxCnx->setTitle(QCoreApplication::translate("GUIPanel", "Conexi\303\263n USB", nullptr));

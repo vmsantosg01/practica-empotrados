@@ -69,7 +69,7 @@ uint32_t debug;
 static EventGroupHandle_t FlagsEventosAlarm;
 TaskHandle_t pwmtask_handler,vel_handler,alarmtask_handler,energytask_handler,buttontask_handler;
 SemaphoreHandle_t semaforo_freertos2,USBSemaphoreMutex,semaforo_energy;
-TimerHandle_t xTimer,xTimer2,xTimerMot,xTimerMot2,xTimerMot3;
+TimerHandle_t xTimer,xTimer2,xTimerMot;
 QueueHandle_t cola_energy,cola_freertos_mot,cola_freertos_mot2,cola_freertos_bot,cola_velocity,cola_freertos_bot2,cola_gled,cola_ADC,cola_alarm_energy, cola_giroscopio;
 static QueueSetHandle_t grupo_colas,grupo_colas_energy,grupo_colas_bot,grupo_colas_pwm;
 
@@ -407,18 +407,16 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
                 pressed_left = false;
             }
 
-
-
             if((i32Status & RIGHT_BUTTON) == 0){    //Right button pressed
                 parametro.fRight = 1;
-                xTimerReset( xTimerMot2, 0 );
-                xTimerStart( xTimerMot2, 0 );
+                xTimerReset( xTimerMot, 0 );
+                xTimerStart( xTimerMot, 0 );
                 pressed_right = true;
 
             }else if(pressed_right){
-                xTimerReset( xTimerMot2, 0 );
-                xTimerStop( xTimerMot2, 0 );
-                xTimerChangePeriod( xTimerMot2, 4 * configTICK_RATE_HZ, 0 );
+                xTimerReset( xTimerMot, 0 );
+                xTimerStop( xTimerMot, 0 );
+                xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
                 xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
                 pressed_right = false;
             }
@@ -426,14 +424,14 @@ static portTASK_FUNCTION( ButtonsTask, pvParameters )
 
             if((i32Status & MID_BUTTON) == 0){  //Mid button pressed
                 parametro.fMid = 1;
-                xTimerReset( xTimerMot3, 0 );
-                xTimerStart( xTimerMot3, 0 );
+                xTimerReset( xTimerMot, 0 );
+                xTimerStart( xTimerMot, 0 );
                 pressed_mid = true;
 
             }else if(pressed_mid){
-                xTimerReset( xTimerMot3, 0 );
-                xTimerStop( xTimerMot3, 0 );
-                xTimerChangePeriod( xTimerMot3, 4 * configTICK_RATE_HZ, 0 );
+                xTimerReset( xTimerMot, 0 );
+                xTimerStop( xTimerMot, 0 );
+                xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
                 xEventGroupSetBits(FlagsEventosAlarm, SOLVED);
                 pressed_mid = false;
             }
@@ -480,7 +478,7 @@ static portTASK_FUNCTION( EnergyTask, pvParameters )
     PARAM_MENSAJE_ENERGY parametro;
     int32_t i32Numdatos;
     int8_t vMotor[2];
-    int32_t systemEnergy = 8000; //MAX_ENERGY;
+    int32_t systemEnergy = MAX_ENERGY;
     uint8_t mot1consumo = 0;
     uint8_t mot2consumo = 0;
     bool first_time = true;
@@ -544,13 +542,14 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
     parametro.motorHot = false;
     parametro.robotFall = false;
     parametro.energybelow4k = false;
+    parametro.motorBurnt = false;
 
     //
     // Loop forever.
     //
     while(1)
     {
-        uxBits = xEventGroupWaitBits(FlagsEventosAlarm,LOWENERGY|ENERGYOUT|CAIDA|BURNING|MOT_ENCEND|MOT_APAG|BURNED|SOLVED ,pdTRUE,pdFALSE,portMAX_DELAY);
+        uxBits = xEventGroupWaitBits(FlagsEventosAlarm,LOWENERGY|ENERGYOUT|CAIDA|BURNING|MOT_ENCEND|MOT_APAG|SOLVED ,pdTRUE,pdFALSE,portMAX_DELAY);
 
         if ((uxBits & LOWENERGY) == LOWENERGY){
             RGBInit(0);
@@ -593,6 +592,8 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
                     xTimerReset( xTimerMot, 0 );
                     xTimerStart( xTimerMot, 0 );
                 }else{
+
+                    parametro.motorBurnt = false;
                     RGBInit(0);
                     RGBEnable();              // Habilita la generacion PWM para el encendido de los LEDs
                     ui32Color[RED] = 0x0;   // Minimo: 0; Maxima 0xFFFF
@@ -618,14 +619,12 @@ static portTASK_FUNCTION( AlarmTask, pvParameters )
             motores_on = false;
         }
 
-//        else if ((uxBits & BURNED) == BURNED){
-//
-//
-//        }
-
         else if ((uxBits & SOLVED) == SOLVED){
             parametro.motorHot = false;
             burning = false;
+            xTimerStop( xTimerMot, 0 );
+            xTimerReset( xTimerMot, 0 );
+            xTimerChangePeriod( xTimerMot, 4 * configTICK_RATE_HZ, 0 );
         }
 
         i32Numdatos=create_frame(pui8Frame,MENSAJE_ALARM,&parametro,sizeof(parametro),MAX_FRAME_SIZE);
@@ -657,16 +656,6 @@ void vTimerCallback( TimerHandle_t pxTimer )
     {
         xEventGroupSetBits(FlagsEventosAlarm, BURNING);
     }
-
-//    if(pxTimer == xTimerMot2)
-//    {
-//        xEventGroupSetBits(FlagsEventosAlarm, BURNING);
-//    }
-//    if(pxTimer == xTimerMot3)
-//    {
-//        xEventGroupSetBits(FlagsEventosAlarm, BURNING);
-//    }
-    //TE HAS QUEDADO HACIENDO LO DE LOS TIMERS
 }
 
 //**********************************************************************************************************************************************************
@@ -877,16 +866,7 @@ int main(void)
          {
             while(1);
          }
-    xTimerMot2 = xTimerCreate("TimerMot2", 4 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
-            if( NULL == xTimerMot )
-             {
-                while(1);
-             }
-    xTimerMot3 = xTimerCreate("TimerMot3", 4 * configTICK_RATE_HZ, pdTRUE,NULL,vTimerCallback); // Creacion del timerSW cada 1s
-            if( NULL == xTimerMot )
-             {
-                while(1);
-             }
+
     // ___________________ CREACION SEMAFOROS ____________________ //
 
     semaforo_freertos2=xSemaphoreCreateBinary();
